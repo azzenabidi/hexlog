@@ -6,7 +6,7 @@ A solo RPG companion for D&D-style play — manage characters, NPCs, locations, 
 
 ## Features
 
-- **Characters** — name, race, class, description, and a token color for maps.
+- **Characters** — name, race, class, description, and an optional image used as a circular token on maps.
 - **NPCs** — same as characters but with a role, plus dashed-outline map tokens so they stand out.
 - **Locations** — name, type, and description; easily referenced in the journal.
 - **Monsters** — statblock reference: name, CR, an optional link, and written details (AC, HP, speed, abilities, traits/actions).
@@ -34,6 +34,7 @@ Hexlog stores everything in `~/.hexlog/`:
 ~/.hexlog/
   data.json   # characters, NPCs, locations, monsters, notes, scenes
   maps/       # map images copied here
+  tokens/     # uploaded character/NPC token images copied here
 ```
 
 On first run it automatically imports data saved by older builds that lived in `~/.solo_dnd/` (then keeps using `~/.hexlog/` going forward).
