@@ -22,11 +22,21 @@ A solo RPG companion for D&D-style play — manage characters, NPCs, locations, 
 
 ## Run
 
+For local development:
+
 ```bash
 ./run.sh
 ```
 
 `run.sh` creates a virtual environment and installs dependencies on first use.
+
+For packaging a distributable app with PyInstaller:
+
+```bash
+./package.sh
+```
+
+This builds a bundled app under `dist/hexlog/`.
 
 ## Data storage
 
