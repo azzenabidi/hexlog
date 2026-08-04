@@ -1,12 +1,13 @@
 """Main application window wiring the tabs together."""
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import QMainWindow, QTabWidget, QToolBar, QAction
 
 from hexlog import constants as C
 from hexlog.storage import Store
 from hexlog.ui.entities import CharactersTab, LocationsTab, MonsterTab, NPCsTab
 from hexlog.ui.notes import NotesTab
+from hexlog.ui.theme import get_theme_stylesheet, toggle_theme_name
 from hexlog.ui.vtt import MapsTab
 
 
@@ -24,6 +25,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(C.APP_NAME)
         self.resize(1200, 780)
+        self.theme_name = "dark"
         # One store shared by every tab; a single save() persists all changes.
         self.store = Store()
 
@@ -31,6 +33,8 @@ class MainWindow(QMainWindow):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(self.AUTOSAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._flush)
+
+        self._setup_theme_toggle()
 
         self.tabs = QTabWidget()
         self.characters_tab = CharactersTab(self.store, self.on_change)
@@ -52,6 +56,24 @@ class MainWindow(QMainWindow):
             "Hexlog - characters, NPCs, locations, monsters, journal, VTT tokens. Data saved to ~/.hexlog/"
         )
         self.refresh()
+
+    def _setup_theme_toggle(self):
+        toolbar = QToolBar("Theme")
+        toolbar.setMovable(False)
+        self.addToolBar(toolbar)
+
+        self.theme_action = QAction("☀ Light", self)
+        self.theme_action.triggered.connect(self.toggle_theme)
+        toolbar.addAction(self.theme_action)
+
+    def toggle_theme(self):
+        self.theme_name = toggle_theme_name(self.theme_name)
+        self._apply_theme()
+
+    def _apply_theme(self):
+        stylesheet = get_theme_stylesheet(self.theme_name)
+        self.setStyleSheet(stylesheet)
+        self.theme_action.setText("☀ Light" if self.theme_name == "dark" else "🌙 Dark")
 
     def on_change(self):
         """Schedule a save+refresh; edits are persisted when typing pauses."""

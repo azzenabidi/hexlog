@@ -13,6 +13,7 @@ A solo RPG companion for D&D-style play — manage characters, NPCs, locations, 
 - **Monsters** — statblock reference: name, CR, an optional link, and written details (AC, HP, speed, abilities, traits/actions).
 - **Journal** — session notes with dialogue and `@mention` insertion; character/NPC/location names are highlighted inline and references are tracked per note.
 - **VTT** — load a battle/area map image, drop character and NPC tokens on it, drag them around. Token positions autosave.
+- **Theme toggle** — switch between dark and light themes from the toolbar at runtime.
 
 ## Requirements
 
