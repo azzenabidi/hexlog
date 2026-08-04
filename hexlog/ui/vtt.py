@@ -54,6 +54,17 @@ def kind_label(kind):
     return "Character"
 
 
+def resize_diameter(center_x, center_y, drag_x, drag_y,
+                    minimum=C.TOKEN_MIN_DIAMETER, maximum=C.TOKEN_MAX_DIAMETER):
+    """New token diameter for a corner drag from the token center to `drag`.
+
+    The handle grows the token symmetrically around its center, so the new
+    diameter is twice the larger of the horizontal/vertical offset.
+    """
+    half = max(abs(drag_x - center_x), abs(drag_y - center_y))
+    return max(minimum, min(maximum, int(2 * half)))
+
+
 class TokenItem(QGraphicsRectItem):
     """A movable token on the VTT scene.
 
@@ -87,10 +98,79 @@ class TokenItem(QGraphicsRectItem):
         self.setPen(pen)
         self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setAcceptHoverEvents(True)
+        self._resizing = False
+        self._drag_center = None
         self.setZValue(1)  # tokens stay above the background map
         self.setToolTip(
             f"{kind_label(kind)}: {name}\n(drag to move, right-click to remove)"
         )
+
+    def set_diameter(self, diameter):
+        """Resize the token around its center, keeping its position fixed."""
+        self.diameter = int(diameter)
+        self.setRect(QRectF(-self.diameter / 2, -self.diameter / 2, self.diameter, self.diameter))
+        self.update()
+
+    def _handle_rect(self):
+        """Square grab-handle drawn at the token's bottom-right corner."""
+        size = max(10.0, self.diameter * 0.18)
+        half = self.diameter / 2.0
+        return QRectF(half - size / 2, half - size / 2, size, size)
+
+    def _draw_handle(self, painter):
+        if not self.isSelected():
+            return
+        painter.save()
+        painter.setPen(QPen(QColor(C.TOKEN_BORDER_COLOR), 1))
+        painter.setBrush(QColor("white"))
+        painter.drawRect(self._handle_rect())
+        painter.restore()
+
+    def hoverMoveEvent(self, event):
+        if self._handle_rect().contains(event.pos()):
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        else:
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._handle_rect().contains(event.pos()):
+            # The built-in move drag would fight the handle drag, so the token
+            # is pinned in place while it is being resized around its center.
+            self._resizing = True
+            self._drag_center = self.scenePos()
+            self.setSelected(True)
+            self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, False)
+            self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing:
+            self.set_diameter(
+                resize_diameter(
+                    self._drag_center.x(), self._drag_center.y(),
+                    event.scenePos().x(), event.scenePos().y(),
+                )
+            )
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._resizing:
+            self._resizing = False
+            self._drag_center = None
+            self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -125,6 +205,7 @@ class TokenItem(QGraphicsRectItem):
                 painter.drawRect(rect)
             else:
                 painter.drawEllipse(rect)
+            self._draw_handle(painter)
             return
         # Fallback mode: colored shape with a short centered label.
         painter.setBrush(self.brush())
@@ -144,6 +225,7 @@ class TokenItem(QGraphicsRectItem):
         if fm.horizontalAdvance(label) > self.diameter * 0.9:
             label = label[:2]
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+        self._draw_handle(painter)
 
     def to_dict(self):
         """Serialize the token's current state for scene persistence."""
