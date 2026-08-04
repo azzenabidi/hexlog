@@ -11,8 +11,25 @@ import uuid
 APP_NAME = "Hexlog"
 # Project homepage used in the About dialog.
 GITHUB_URL = "https://github.com/azzenabidi/hexlog"
+
+
+def data_subdir(environ=None) -> str:
+    """Return the data directory name for this run: "prod" in an AppImage, else "dev".
+
+    The AppImage runtime exports $APPIMAGE; anything else is treated as local
+    development. HEXLOG_ENV (set by the packaged AppRun) overrides detection.
+    """
+    env = os.environ if environ is None else environ
+    override = env.get("HEXLOG_ENV")
+    if override in ("dev", "prod"):
+        return override
+    return "prod" if env.get("APPIMAGE") else "dev"
+
+
 # Data lives under the user's home so the app needs no install-time setup.
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog")
+# Local development uses a dev copy; the packaged AppImage release uses prod.
+DATA_SUBDIR = data_subdir()
+DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog", DATA_SUBDIR)
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
 # Map images are copied here; scenes reference them by basename only.
 MAPS_DIR = os.path.join(DATA_DIR, "maps")

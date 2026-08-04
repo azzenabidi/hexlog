@@ -19,6 +19,29 @@ def ensure_dirs() -> None:
     os.makedirs(C.TOKENS_DIR, exist_ok=True)
 
 
+def migrate_legacy_data() -> None:
+    """One-time move of pre-0.3.3 data (~/.hexlog/) into the active subdir.
+
+    Earlier releases stored everything directly under ~/.hexlog/. Since data
+    now lives under ~/.hexlog/{dev,prod}, existing files are moved once so no
+    user's data appears lost after the upgrade.
+    """
+    if os.path.exists(C.DATA_FILE):
+        return
+    legacy_dir = os.path.dirname(C.DATA_DIR)
+    legacy_file = os.path.join(legacy_dir, "data.json")
+    if not os.path.exists(legacy_file):
+        return
+    os.makedirs(C.DATA_DIR, exist_ok=True)
+    shutil.move(legacy_file, C.DATA_FILE)
+    if os.path.exists(legacy_file + ".bak"):
+        shutil.move(legacy_file + ".bak", C.DATA_FILE + ".bak")
+    for name, target in (("maps", C.MAPS_DIR), ("tokens", C.TOKENS_DIR)):
+        source = os.path.join(legacy_dir, name)
+        if os.path.isdir(source):
+            shutil.move(source, target)
+
+
 def _read_json(path):
     """Read a JSON file, returning None if it is missing or corrupt."""
     try:
@@ -34,6 +57,7 @@ def load_data() -> dict:
     A missing or corrupt main file must not crash the app on startup; when the
     main file is unreadable, the backup from the last good save is used first.
     """
+    migrate_legacy_data()
     ensure_dirs()
     data = _read_json(C.DATA_FILE)
     if data is None:

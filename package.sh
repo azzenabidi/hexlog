@@ -73,6 +73,7 @@ cp packaging/hexlog.desktop "$APPDIR/usr/share/applications/hexlog.desktop"
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "$0")")"
+export HEXLOG_ENV=prod
 exec "$HERE/usr/bin/python3" -m hexlog "$@"
 EOF
 chmod +x "$APPDIR/AppRun"

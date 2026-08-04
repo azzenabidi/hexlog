@@ -125,3 +125,35 @@ def test_load_recovers_from_backup_when_main_file_is_corrupt(isolated_paths):
 
     recovered = Store()
     assert [e["id"] for e in recovered[C.CHARACTERS]] == ["v1"]
+
+
+def test_migrates_legacy_root_data_into_subdir(isolated_paths):
+    from hexlog.storage import load_data
+
+    legacy_dir = os.path.dirname(C.DATA_DIR)
+    os.makedirs(os.path.join(legacy_dir, "maps"), exist_ok=True)
+    os.makedirs(os.path.join(legacy_dir, "tokens"), exist_ok=True)
+    with open(os.path.join(legacy_dir, "data.json"), "w") as fh:
+        json.dump({"characters": [{"id": "legacy"}]}, fh)
+    with open(os.path.join(legacy_dir, "data.json.bak"), "w") as fh:
+        json.dump({"characters": []}, fh)
+
+    data = load_data()
+    assert data["characters"] == [{"id": "legacy"}]
+    assert os.path.exists(C.DATA_FILE)
+    assert not os.path.exists(os.path.join(legacy_dir, "data.json"))
+    assert os.path.isdir(C.MAPS_DIR)
+    assert os.path.isdir(C.TOKENS_DIR)
+
+
+def test_does_not_migrate_when_subdir_data_already_exists(isolated_paths):
+    from hexlog.storage import migrate_legacy_data, save_data
+
+    legacy_dir = os.path.dirname(C.DATA_DIR)
+    save_data({"characters": [{"id": "new"}]})
+    with open(os.path.join(legacy_dir, "data.json"), "w") as fh:
+        json.dump({"characters": [{"id": "legacy"}]}, fh)
+
+    migrate_legacy_data()
+    with open(C.DATA_FILE) as fh:
+        assert json.load(fh)["characters"] == [{"id": "new"}]
