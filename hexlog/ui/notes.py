@@ -256,7 +256,7 @@ class NotesTab(QWidget):
         note = self._ensure_note()
         note["title"] = self.title_edit.text().strip()
         text = self.editor.toPlainText()
-        note["text"] = text.strip()
+        note["text"] = text
         note["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
         note["char_ids"] = referenced_ids(self.store[C.CHARACTERS], text)
         note["npc_ids"] = referenced_ids(self.store[C.NPCS], text)

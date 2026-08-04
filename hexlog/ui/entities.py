@@ -85,7 +85,7 @@ class EntityTab(QWidget):
         self.name_edit.textChanged.connect(self._on_name_changed)
         self.extra_edits = {}
         self.desc_edit = QPlainTextEdit()
-        self.desc_edit.setFixedHeight(140)
+        self.desc_edit.setMinimumHeight(140)
         self.desc_edit.textChanged.connect(self._on_desc_changed)
         self.color = QColor(C.DEFAULT_ENTITY_COLOR)
 
@@ -304,7 +304,7 @@ class EntityTab(QWidget):
         if self._syncing:
             return
         entity = self._ensure()
-        entity[self.desc_attr] = self.desc_edit.toPlainText().strip()
+        entity[self.desc_attr] = self.desc_edit.toPlainText()
         self.on_change()
 
     def _resolved_image(self):

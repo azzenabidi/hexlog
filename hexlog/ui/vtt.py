@@ -300,6 +300,11 @@ class MapsTab(QWidget):
             item = QListWidgetItem(scene.get("name", "Unnamed scene"))
             item.setData(Qt.ItemDataRole.UserRole, scene["id"])
             self.scene_list.addItem(item)
+        if self.scene_list.count() == 0:
+            hint = QListWidgetItem("No scenes yet - click New Scene.")
+            hint.setFlags(Qt.ItemFlag.NoItemFlags)
+            hint.setForeground(QColor(C.HINT_TEXT_COLOR))
+            self.scene_list.addItem(hint)
         self.scene_list.blockSignals(False)
         if self.current_scene_id is not None:
             index = self._scene_index(self.current_scene_id)
