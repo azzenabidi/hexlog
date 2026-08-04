@@ -10,4 +10,4 @@ Data is persisted as JSON under ~/.hexlog/ (data.json, maps/, tokens/).
 Run the application with:  python -m hexlog
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
