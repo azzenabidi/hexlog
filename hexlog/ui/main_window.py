@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         # One store shared by every tab; a single save() persists all changes.
         self.store = Store()
 
+        self._pending_refresh = None  # tab that last reported a change
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(self.AUTOSAVE_DELAY_MS)
@@ -38,12 +39,12 @@ class MainWindow(QMainWindow):
         self._setup_theme_toggle()
 
         self.tabs = QTabWidget()
-        self.characters_tab = CharactersTab(self.store, self.on_change)
-        self.npcs_tab = NPCsTab(self.store, self.on_change)
-        self.locations_tab = LocationsTab(self.store, self.on_change)
-        self.monsters_tab = MonsterTab(self.store, self.on_change)
-        self.notes_tab = NotesTab(self.store, self.on_change)
-        self.maps_tab = MapsTab(self.store, self.on_change)
+        self.characters_tab = CharactersTab(self.store, lambda: self._on_changed(self.characters_tab))
+        self.npcs_tab = NPCsTab(self.store, lambda: self._on_changed(self.npcs_tab))
+        self.locations_tab = LocationsTab(self.store, lambda: self._on_changed(self.locations_tab))
+        self.monsters_tab = MonsterTab(self.store, lambda: self._on_changed(self.monsters_tab))
+        self.notes_tab = NotesTab(self.store, lambda: self._on_changed(self.notes_tab))
+        self.maps_tab = MapsTab(self.store, lambda: self._on_changed(self.maps_tab))
         self.tabs.addTab(self.characters_tab, "Characters")
         self.tabs.addTab(self.npcs_tab, "NPCs")
         self.tabs.addTab(self.locations_tab, "Locations")
@@ -76,8 +77,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(stylesheet)
         self.theme_action.setText("☀ Light" if self.theme_name == "dark" else "🌙 Dark")
 
-    def on_change(self):
-        """Schedule a save+refresh; edits are persisted when typing pauses."""
+    def _on_changed(self, source):
+        """Schedule a save; the tab that reported the change gets refreshed."""
+        self._pending_refresh = source
         self._save_timer.start()
 
     def flush(self):
@@ -87,7 +89,9 @@ class MainWindow(QMainWindow):
 
     def _flush(self):
         self.store.save()
-        self.refresh()
+        if self._pending_refresh is not None:
+            self._pending_refresh.refresh()
+            self._pending_refresh = None
 
     def refresh(self):
         self.characters_tab.refresh()
@@ -99,9 +103,10 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, index):
         """Re-sync the journal/VTT when the user switches to them."""
-        if index == 4:
+        widget = self.tabs.widget(index)
+        if widget is self.notes_tab:
             self.notes_tab.refresh()
-        elif index == 5:
+        elif widget is self.maps_tab:
             self.maps_tab.refresh()
 
     def closeEvent(self, event):

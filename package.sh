@@ -54,13 +54,8 @@ mkdir -p "$APPDIR/usr/bin" \
 info "Extracting Python runtime"
 tar -xzf "$PBS_TARBALL" -C "$APPDIR/usr" --strip-components=1
 
-info "Installing Python dependencies"
-"$APPDIR/usr/bin/python3" -m pip install --no-cache-dir --quiet -r requirements.txt
-
-SITE_PACKAGES="$("$APPDIR/usr/bin/python3" -c 'import site; print(site.getsitepackages()[0])')"
-
-info "Installing $APP_NAME package"
-cp -r hexlog "$SITE_PACKAGES/hexlog"
+info "Installing $APP_NAME and Python dependencies"
+"$APPDIR/usr/bin/python3" -m pip install --no-cache-dir --quiet .
 
 # ---------------------------------------------------------------------------
 # 3. Icon, desktop entry and launcher

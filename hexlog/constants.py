@@ -39,6 +39,14 @@ DEFAULT_DATA = {kind: [] for kind in KINDS}
 # Shared filter string for image file dialogs.
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"
 
+# Defaults and fallbacks shared across the UI.
+DEFAULT_ENTITY_COLOR = "#888888"
+HINT_TEXT_COLOR = "#6b6f78"
+TOKEN_BORDER_COLOR = "#141414"
+CANVAS_BACKGROUND = "#1f1f1f"
+CANVAS_GRID_COLOR = "#333333"
+TOKEN_DIAMETER = 46
+
 
 def new_id() -> str:
     """Generate a short, collision-free record id."""

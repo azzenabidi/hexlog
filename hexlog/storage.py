@@ -8,6 +8,7 @@ helpers; the main window calls Store.save() whenever a tab reports a change.
 import copy
 import json
 import os
+import shutil
 
 from hexlog import constants as C
 
@@ -18,14 +19,26 @@ def ensure_dirs() -> None:
     os.makedirs(C.TOKENS_DIR, exist_ok=True)
 
 
-def load_data() -> dict:
-    """Read the JSON store, falling back to a fresh template on any error."""
-    ensure_dirs()
+def _read_json(path):
+    """Read a JSON file, returning None if it is missing or corrupt."""
     try:
-        with open(C.DATA_FILE, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
-        # A missing or corrupt file must not crash the app on startup.
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return None
+
+
+def load_data() -> dict:
+    """Read the JSON store, falling back to a fresh template on any error.
+
+    A missing or corrupt main file must not crash the app on startup; when the
+    main file is unreadable, the backup from the last good save is used first.
+    """
+    ensure_dirs()
+    data = _read_json(C.DATA_FILE)
+    if data is None:
+        data = _read_json(C.DATA_FILE + ".bak")
+    if not isinstance(data, dict):
         data = copy.deepcopy(C.DEFAULT_DATA)
     # Backfill keys added in newer versions for compatibility with old files.
     for key in C.DEFAULT_DATA:
@@ -34,14 +47,32 @@ def load_data() -> dict:
 
 
 def save_data(data: dict) -> None:
-    """Persist the whole store to disk as pretty-printed UTF-8 JSON."""
+    """Persist the whole store to disk as pretty-printed UTF-8 JSON.
+
+    Writes atomically (temp file + rename) and keeps a one-generation backup,
+    so a crash mid-save can never leave the user's data file half-written.
+    """
     ensure_dirs()
-    with open(C.DATA_FILE, "w", encoding="utf-8") as fh:
+    tmp_file = C.DATA_FILE + ".tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
+        fh.flush()
+        os.fsync(fh.fileno())
+    if os.path.exists(C.DATA_FILE):
+        shutil.copy2(C.DATA_FILE, C.DATA_FILE + ".bak")
+    os.replace(tmp_file, C.DATA_FILE)
 
 
 def next_color(entities) -> str:
-    """Pick the next palette color, rotating so repeats look intentional."""
+    """Pick a palette color no existing entity uses, falling back to rotation.
+
+    Preferring unused colors keeps each entity's token visually distinct even
+    after others are deleted.
+    """
+    used = {e.get("color") for e in entities if e.get("color")}
+    for color in C.COLOR_PALETTE:
+        if color not in used:
+            return color
     return C.COLOR_PALETTE[len(entities) % len(C.COLOR_PALETTE)]
 
 

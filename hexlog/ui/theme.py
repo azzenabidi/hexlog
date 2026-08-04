@@ -373,4 +373,3 @@ def get_theme_stylesheet(theme_name: str = "dark") -> str:
 def toggle_theme_name(theme_name: str) -> str:
     """Flip between dark and light theme names."""
     return "light" if theme_name.lower() == "dark" else "dark"
-

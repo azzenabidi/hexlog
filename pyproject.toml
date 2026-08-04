@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hexlog"
+description = "A solo RPG companion for D&D-style play"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["PySide6>=6.6"]
+dynamic = ["version"]
+
+[project.scripts]
+hexlog = "hexlog.__main__:main"
+
+[tool.setuptools]
+packages = ["hexlog", "hexlog.ui"]
+
+[tool.setuptools.dynamic]
+version = { attr = "hexlog.__version__" }

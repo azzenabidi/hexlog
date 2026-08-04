@@ -29,6 +29,20 @@ from PySide6.QtWidgets import (
 from hexlog import constants as C
 
 
+def mention_pattern(name):
+    """Compile the word-boundary pattern used to match an entity name."""
+    return re.compile(r"\b" + re.escape(name) + r"\b")
+
+
+def referenced_ids(entities, text):
+    """Ids of entities whose name appears in the note text (whole-word match).
+
+    Uses the same word-boundary rule as MentionHighlighter so the stored
+    references and the visual highlighting never disagree.
+    """
+    return [e["id"] for e in entities if e.get("name") and mention_pattern(e["name"]).search(text)]
+
+
 class MentionHighlighter:
     """Colors entity names appearing in the journal editor.
 
@@ -49,7 +63,7 @@ class MentionHighlighter:
             if name:
                 # Word boundaries keep "Al" from matching inside "Altar".
                 self.rules.append(
-                    (re.compile(r"\b" + re.escape(name) + r"\b"), entity.get("color", "#888"))
+                    (mention_pattern(name), entity.get("color", C.DEFAULT_ENTITY_COLOR))
                 )
 
     def rehighlight(self):
@@ -209,7 +223,7 @@ class NotesTab(QWidget):
         if self.note_list.count() == 0:
             hint = QListWidgetItem("No notes yet - click New Note.")
             hint.setFlags(Qt.ItemFlag.NoItemFlags)
-            hint.setForeground(QColor("#6b6f78"))
+            hint.setForeground(QColor(C.HINT_TEXT_COLOR))
             self.note_list.addItem(hint)
         self.note_list.blockSignals(False)
         if self.current_note_id is not None:
@@ -244,16 +258,11 @@ class NotesTab(QWidget):
         text = self.editor.toPlainText()
         note["text"] = text.strip()
         note["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        note["char_ids"] = self._referenced(self.store[C.CHARACTERS], text)
-        note["npc_ids"] = self._referenced(self.store[C.NPCS], text)
-        note["loc_ids"] = self._referenced(self.store[C.LOCATIONS], text)
+        note["char_ids"] = referenced_ids(self.store[C.CHARACTERS], text)
+        note["npc_ids"] = referenced_ids(self.store[C.NPCS], text)
+        note["loc_ids"] = referenced_ids(self.store[C.LOCATIONS], text)
         self._refresh_note_label(note)
         self.on_change()
-
-    @staticmethod
-    def _referenced(entities, text):
-        """Ids of entities whose name appears in the note text (lenient match)."""
-        return [e["id"] for e in entities if e.get("name") and e["name"] in text]
 
     def _ensure_note(self):
         """Return the note being edited, lazily creating a draft if needed."""

@@ -63,7 +63,7 @@ class TokenItem(QGraphicsRectItem):
     token's center exactly where the user clicked.
     """
 
-    def __init__(self, entity_id, kind, name, color, diameter=46, image=None):
+    def __init__(self, entity_id, kind, name, color, diameter=C.TOKEN_DIAMETER, image=None):
         super().__init__(-diameter / 2, -diameter / 2, diameter, diameter)
         self.entity_id = entity_id
         self.kind = kind
@@ -80,7 +80,7 @@ class TokenItem(QGraphicsRectItem):
                 if not pix.isNull():
                     self._pixmap = pix
         self.setBrush(QBrush(QColor(color)))
-        pen = QPen(QColor("#141414"), 2)
+        pen = QPen(QColor(C.TOKEN_BORDER_COLOR), 2)
         # NPCs use a dashed outline to visually stand apart from characters.
         if kind == "npc":
             pen.setStyle(Qt.PenStyle.DashLine)
@@ -168,7 +168,7 @@ class MapView(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setScene(self.map_tab.scene)
-        self.setBackgroundBrush(QBrush(QColor("#1f1f1f")))
+        self.setBackgroundBrush(QBrush(QColor(C.CANVAS_BACKGROUND)))
 
     def mousePressEvent(self, event):
         # Right-click on a token removes it.
@@ -323,7 +323,10 @@ class MapsTab(QWidget):
         if scene is None:
             # Placeholder canvas so the view is never empty.
             self.scene.setSceneRect(0, 0, 800, 600)
-            self.scene.addRect(0, 0, 800, 600, QPen(QColor("#333")), QBrush(QColor("#1f1f1f")))
+            self.scene.addRect(
+                0, 0, 800, 600,
+                QPen(QColor(C.CANVAS_GRID_COLOR)), QBrush(QColor(C.CANVAS_BACKGROUND)),
+            )
             self.status.setText("No scene selected. Create or pick a scene, then load a map image.")
             return
         # Map images are stored by basename and resolved against MAPS_DIR.
@@ -339,7 +342,10 @@ class MapsTab(QWidget):
         else:
             # No map loaded: default gray canvas.
             self.scene.setSceneRect(0, 0, 1000, 700)
-            self.scene.addRect(0, 0, 1000, 700, QPen(QColor("#333")), QBrush(QColor("#1f1f1f")))
+            self.scene.addRect(
+                0, 0, 1000, 700,
+                QPen(QColor(C.CANVAS_GRID_COLOR)), QBrush(QColor(C.CANVAS_BACKGROUND)),
+            )
         for token in scene.get("tokens", []):
             self._restore_token(token)
         self.status.setText(f"Scene '{scene.get('name')}' - drag tokens, right-click to remove.")
@@ -350,8 +356,8 @@ class MapsTab(QWidget):
             token.get("entity_id", token.get("char_id")),  # char_id is the legacy key
             token.get("kind", "character"),
             token.get("name", "?"),
-            token.get("color", "#888"),
-            token.get("diameter", 46),
+            token.get("color", C.DEFAULT_ENTITY_COLOR),
+            token.get("diameter", C.TOKEN_DIAMETER),
             image=token.get("image"),
         )
         item.setPos(token.get("x", 0), token.get("y", 0))
@@ -409,7 +415,14 @@ class MapsTab(QWidget):
             return
         # Random basename avoids collisions between identically named files.
         dest = os.path.join(C.MAPS_DIR, f"{uuid.uuid4().hex[:8]}{os.path.splitext(path)[1]}")
-        shutil.copy(path, dest)
+        try:
+            shutil.copy(path, dest)
+        except OSError:
+            # Surface the failure rather than leaving the scene half-updated.
+            QMessageBox.warning(
+                self, C.APP_NAME, "Could not copy the map image into the app data folder."
+            )
+            return
         scene = self._find_scene(self.current_scene_id)
         scene["map_path"] = os.path.basename(dest)
         self.refresh_scene_view()

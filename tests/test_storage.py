@@ -80,9 +80,48 @@ def test_load_backfills_missing_keys(isolated_paths):
         assert store[kind] == []
 
 
-def test_next_color_rotates(isolated_paths):
+def test_next_color_prefers_unused(isolated_paths):
     from hexlog.storage import next_color
 
-    n = len(C.COLOR_PALETTE)
-    first = next_color([])
-    assert next_color(list(range(n))) == first
+    assert next_color([]) == C.COLOR_PALETTE[0]
+    assert next_color([{"color": C.COLOR_PALETTE[0]}]) == C.COLOR_PALETTE[1]
+
+
+def test_next_color_rotates_when_palette_exhausted(isolated_paths):
+    from hexlog.storage import next_color
+
+    full = [{"color": c} for c in C.COLOR_PALETTE]
+    assert next_color(full) in C.COLOR_PALETTE
+
+
+def test_save_keeps_previous_backup(isolated_paths):
+    from hexlog.storage import Store
+
+    store = Store()
+    store.add(C.CHARACTERS, {"id": "v1", "name": "first"})
+    store.save()
+    store.add(C.CHARACTERS, {"id": "v2", "name": "second"})
+    store.save()
+
+    with open(C.DATA_FILE + ".bak", "r") as fh:
+        backup = json.load(fh)
+    assert [e["id"] for e in backup[C.CHARACTERS]] == ["v1"]
+    with open(C.DATA_FILE, "r") as fh:
+        current = json.load(fh)
+    assert [e["id"] for e in current[C.CHARACTERS]] == ["v1", "v2"]
+
+
+def test_load_recovers_from_backup_when_main_file_is_corrupt(isolated_paths):
+    from hexlog.storage import Store
+
+    store = Store()
+    store.add(C.CHARACTERS, {"id": "v1", "name": "first"})
+    store.save()
+    store.add(C.CHARACTERS, {"id": "v2", "name": "second"})
+    store.save()
+
+    with open(C.DATA_FILE, "w") as fh:
+        fh.write("{ this is not valid json")
+
+    recovered = Store()
+    assert [e["id"] for e in recovered[C.CHARACTERS]] == ["v1"]
