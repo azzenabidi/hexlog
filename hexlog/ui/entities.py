@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from hexlog import constants as C
 from hexlog.storage import next_color
+from hexlog.validation import validate_name
 
 
 class EntityTab(QWidget):
@@ -113,6 +114,14 @@ class EntityTab(QWidget):
 
         self.status = QLabel("")
         form.addRow(self.status)
+
+        # Name validation messages live here so they never clobber the status.
+        self.error_label = QLabel("")
+        self.error_label.setWordWrap(True)
+        self.error_label.setStyleSheet(f"color: {C.ERROR_COLOR};")
+        self.error_label.hide()
+        form.addRow(self.error_label)
+
         root.addWidget(form_box, 2)
 
         # Shortcuts: Ctrl+N starts a new entity, Delete removes the selection
@@ -192,6 +201,7 @@ class EntityTab(QWidget):
                 if self.enable_image:
                     self.image_name = None
                     self._update_image_label()
+                self._set_name_error(None)
                 self.status.setText(
                     f"Create a {self.entity_label.lower()} - start typing, it saves automatically."
                 )
@@ -207,6 +217,7 @@ class EntityTab(QWidget):
             if self.enable_image:
                 self.image_name = entity.get("image") or None
                 self._update_image_label()
+            self._set_name_error(validate_name(self.name_edit.text()))
             self.status.setText(f"Editing {entity.get('name') or '(unnamed)'}")
         finally:
             self._syncing = False
@@ -269,7 +280,17 @@ class EntityTab(QWidget):
         entity = self._ensure()
         entity["name"] = text.strip()
         self._refresh_item_label(entity)
+        self._set_name_error(validate_name(text))
         self.on_change()
+
+    def _set_name_error(self, message):
+        """Show or hide the name validation message."""
+        if message:
+            self.error_label.setText(message)
+            self.error_label.show()
+        else:
+            self.error_label.clear()
+            self.error_label.hide()
 
     def _on_extra_changed(self, attr, text):
         if self._syncing:
