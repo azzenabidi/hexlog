@@ -22,4 +22,18 @@ fi
 
 "$PYTHON_BIN" -m pip install --user --break-system-packages -r requirements.txt
 
+# Ensure the runtime can import the required packages before packaging.
+"$PYTHON_BIN" - <<'PY'
+import importlib
+import sys
+
+required = ["PySide6", "PyInstaller"]
+missing = [name for name in required if importlib.util.find_spec(name) is None]
+if missing:
+    print(f"Missing required packages: {', '.join(missing)}", file=sys.stderr)
+    sys.exit(1)
+
+print("All packaging dependencies are available.")
+PY
+
 exec "$PYTHON_BIN" -m PyInstaller --noconfirm --clean --distpath dist --workpath build hexlog.spec "$@"
