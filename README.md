@@ -30,20 +30,16 @@ For local development:
 
 `run.sh` creates a virtual environment and installs dependencies on first use.
 
-For packaging a distributable desktop app as an AppImage:
+## Production
+
+Grab the latest AppImage from the [releases page](https://github.com/azzenabidi/hexlog/releases), then run it:
 
 ```bash
-./package.sh
+chmod +x hexlog-*.AppImage
+./hexlog-*.AppImage
 ```
 
-This bundles a self-contained Python runtime ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)), the app and its PySide6 dependencies, and produces `dist/hexlog-<version>-<arch>.AppImage`. Just download that file, make it executable, and run it:
-
-```bash
-chmod +x dist/hexlog-*.AppImage
-./dist/hexlog-*.AppImage
-```
-
-The build downloads the Python runtime and `appimagetool` once and caches them under `build/`.
+No Python or PySide6 installation required — the AppImage bundles everything.
 
 ## Data storage
 
@@ -64,3 +60,7 @@ On first run Hexlog creates `~/.hexlog/` fresh; it never imports data from any o
 - On the VTT tab: click a character or NPC in the dropdown, press **Add Token To Map**, then click the map to place it. Positions are saved automatically.
 - Right-click a token to remove it; drag to reposition.
 - `+` / `-` zoom, **Fit** to fit the map in the view.
+
+## License
+
+Hexlog is released under the [MIT License](LICENSE).
