@@ -43,20 +43,20 @@ No Python or PySide6 installation required — the AppImage bundles everything.
 
 ## Data storage
 
-Hexlog stores everything under `~/.hexlog/`. Local development uses the
-`dev` copy, while the packaged AppImage release uses `prod`, so the two never
-share data:
+Hexlog follows the XDG convention and stores everything under `~/.config/hexlog/`.
+Local development uses the `dev` copy, while the packaged AppImage release uses
+`prod`, so the two never share data:
 
 ```
-~/.hexlog/
+~/.config/hexlog/
   dev/ or prod/
     data.json   # characters, NPCs, locations, monsters, notes, scenes
     maps/       # map images copied here
     tokens/     # uploaded character/NPC token images copied here
 ```
 
-On first run Hexlog creates the active subdirectory fresh; data from releases
-before 0.3.3 (which lived directly in `~/.hexlog/`) is moved in automatically.
+On first run Hexlog creates the active subdirectory fresh; data from older
+releases (which lived in `~/.hexlog/`) is moved in automatically.
 
 ## Usage notes
 

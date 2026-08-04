@@ -17,6 +17,7 @@ def isolated_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "DATA_FILE", str(data_dir / "data.json"))
     monkeypatch.setattr(C, "MAPS_DIR", str(data_dir / "maps"))
     monkeypatch.setattr(C, "TOKENS_DIR", str(data_dir / "tokens"))
+    monkeypatch.setattr(C, "LEGACY_DATA_DIR", str(tmp_path / "legacy"))
 
 
 def test_fresh_store_has_default_shape(isolated_paths):
@@ -130,28 +131,44 @@ def test_load_recovers_from_backup_when_main_file_is_corrupt(isolated_paths):
 def test_migrates_legacy_root_data_into_subdir(isolated_paths):
     from hexlog.storage import load_data
 
-    legacy_dir = os.path.dirname(C.DATA_DIR)
-    os.makedirs(os.path.join(legacy_dir, "maps"), exist_ok=True)
-    os.makedirs(os.path.join(legacy_dir, "tokens"), exist_ok=True)
-    with open(os.path.join(legacy_dir, "data.json"), "w") as fh:
+    legacy = C.LEGACY_DATA_DIR
+    os.makedirs(os.path.join(legacy, "maps"), exist_ok=True)
+    os.makedirs(os.path.join(legacy, "tokens"), exist_ok=True)
+    with open(os.path.join(legacy, "data.json"), "w") as fh:
         json.dump({"characters": [{"id": "legacy"}]}, fh)
-    with open(os.path.join(legacy_dir, "data.json.bak"), "w") as fh:
+    with open(os.path.join(legacy, "data.json.bak"), "w") as fh:
         json.dump({"characters": []}, fh)
 
     data = load_data()
     assert data["characters"] == [{"id": "legacy"}]
     assert os.path.exists(C.DATA_FILE)
-    assert not os.path.exists(os.path.join(legacy_dir, "data.json"))
+    assert not os.path.exists(os.path.join(legacy, "data.json"))
     assert os.path.isdir(C.MAPS_DIR)
     assert os.path.isdir(C.TOKENS_DIR)
+
+
+def test_migrates_recent_subdir_layout(isolated_paths):
+    from hexlog.storage import load_data
+
+    recent = os.path.join(C.LEGACY_DATA_DIR, C.DATA_SUBDIR)
+    os.makedirs(os.path.join(recent, "maps"), exist_ok=True)
+    with open(os.path.join(recent, "data.json"), "w") as fh:
+        json.dump({"characters": [{"id": "recent"}]}, fh)
+
+    data = load_data()
+    assert data["characters"] == [{"id": "recent"}]
+    assert os.path.exists(C.DATA_FILE)
+    assert not os.path.exists(recent)
+    assert os.path.isdir(C.MAPS_DIR)
 
 
 def test_does_not_migrate_when_subdir_data_already_exists(isolated_paths):
     from hexlog.storage import migrate_legacy_data, save_data
 
-    legacy_dir = os.path.dirname(C.DATA_DIR)
+    legacy = C.LEGACY_DATA_DIR
     save_data({"characters": [{"id": "new"}]})
-    with open(os.path.join(legacy_dir, "data.json"), "w") as fh:
+    os.makedirs(legacy, exist_ok=True)
+    with open(os.path.join(legacy, "data.json"), "w") as fh:
         json.dump({"characters": [{"id": "legacy"}]}, fh)
 
     migrate_legacy_data()

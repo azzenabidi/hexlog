@@ -6,7 +6,8 @@ Guidance for AI coding agents working on Hexlog.
 
 Hexlog is a solo RPG companion: a PySide6 desktop app for characters, NPCs,
 locations, monster statblocks, a journal, and a lightweight VTT with draggable
-tokens. Data is persisted as JSON under `~/.hexlog/`. There are no save buttons
+tokens. Data is persisted as JSON under `~/.config/hexlog/` (dev copy for local
+development, prod for the AppImage). There are no save buttons
 — every edit autosaves through a debounced timer in `MainWindow`.
 
 ## Commands

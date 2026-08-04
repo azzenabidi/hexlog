@@ -1,8 +1,9 @@
 """App-wide constants: names, paths, and shared defaults.
 
-Paths are derived from the user's home directory so the app needs no
-install-time configuration. The persistence layer in storage.py is the only
-module that reads and writes these locations.
+Paths follow the XDG convention: data lives under ~/.config/hexlog/ with a
+dev copy for local development and a prod copy for the packaged AppImage. The
+persistence layer in storage.py is the only module that reads and writes these
+locations.
 """
 
 import os
@@ -26,15 +27,24 @@ def data_subdir(environ=None) -> str:
     return "prod" if env.get("APPIMAGE") else "dev"
 
 
-# Data lives under the user's home so the app needs no install-time setup.
-# Local development uses a dev copy; the packaged AppImage release uses prod.
+def config_root_dir(environ=None) -> str:
+    """Return the base config directory: $XDG_CONFIG_HOME or ~/.config."""
+    env = os.environ if environ is None else environ
+    return env.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+
+
+# App data lives under the user's config dir (~/.config/hexlog) so it follows
+# the XDG convention. Local development uses a dev copy; the packaged AppImage
+# release uses prod. LEGACY_DATA_DIR points at the pre-0.3.3 location.
+APP_CONFIG_DIR = os.path.join(config_root_dir(), "hexlog")
 DATA_SUBDIR = data_subdir()
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog", DATA_SUBDIR)
+DATA_DIR = os.path.join(APP_CONFIG_DIR, DATA_SUBDIR)
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
 # Map images are copied here; scenes reference them by basename only.
 MAPS_DIR = os.path.join(DATA_DIR, "maps")
 # Character/NPC token images are copied here for the same reason.
 TOKENS_DIR = os.path.join(DATA_DIR, "tokens")
+LEGACY_DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog")
 
 # Cycled through when creating new characters so tokens start visually distinct.
 COLOR_PALETTE = [

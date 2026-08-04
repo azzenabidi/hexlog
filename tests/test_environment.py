@@ -20,7 +20,20 @@ def test_explicit_override_wins():
 
 def test_data_paths_use_selected_subdir():
     assert C.DATA_SUBDIR == C.data_subdir()
-    assert C.DATA_DIR == os.path.join(os.path.expanduser("~"), ".hexlog", C.DATA_SUBDIR)
+    assert C.DATA_DIR == os.path.join(C.APP_CONFIG_DIR, C.DATA_SUBDIR)
     assert C.DATA_FILE == os.path.join(C.DATA_DIR, "data.json")
     assert C.MAPS_DIR == os.path.join(C.DATA_DIR, "maps")
     assert C.TOKENS_DIR == os.path.join(C.DATA_DIR, "tokens")
+
+
+def test_config_root_defaults_to_home_config():
+    assert C.config_root_dir({}) == os.path.join(os.path.expanduser("~"), ".config")
+
+
+def test_config_root_respects_xdg_config_home():
+    assert C.config_root_dir({"XDG_CONFIG_HOME": "/custom/cfg"}) == "/custom/cfg"
+
+
+def test_app_config_dir_under_config_root():
+    assert C.APP_CONFIG_DIR == os.path.join(C.config_root_dir(), "hexlog")
+    assert C.LEGACY_DATA_DIR == os.path.join(os.path.expanduser("~"), ".hexlog")

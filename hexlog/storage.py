@@ -20,16 +20,20 @@ def ensure_dirs() -> None:
 
 
 def migrate_legacy_data() -> None:
-    """One-time move of pre-0.3.3 data (~/.hexlog/) into the active subdir.
+    """One-time move of old data (~/.hexlog/) into the active config subdir.
 
-    Earlier releases stored everything directly under ~/.hexlog/. Since data
-    now lives under ~/.hexlog/{dev,prod}, existing files are moved once so no
-    user's data appears lost after the upgrade.
+    Data lived at ~/.hexlog/{dev,prod} for a short 0.3.3 pre-release and at
+    ~/.hexlog/ (data.json, maps/, tokens/) before that. Existing files are
+    moved into ~/.config/hexlog/{dev,prod} once so nothing appears lost.
     """
     if os.path.exists(C.DATA_FILE):
         return
-    legacy_dir = os.path.dirname(C.DATA_DIR)
-    legacy_file = os.path.join(legacy_dir, "data.json")
+    recent_dir = os.path.join(C.LEGACY_DATA_DIR, C.DATA_SUBDIR)
+    if os.path.isdir(recent_dir):
+        os.makedirs(os.path.dirname(C.DATA_DIR), exist_ok=True)
+        shutil.move(recent_dir, C.DATA_DIR)
+        return
+    legacy_file = os.path.join(C.LEGACY_DATA_DIR, "data.json")
     if not os.path.exists(legacy_file):
         return
     os.makedirs(C.DATA_DIR, exist_ok=True)
@@ -37,7 +41,7 @@ def migrate_legacy_data() -> None:
     if os.path.exists(legacy_file + ".bak"):
         shutil.move(legacy_file + ".bak", C.DATA_FILE + ".bak")
     for name, target in (("maps", C.MAPS_DIR), ("tokens", C.TOKENS_DIR)):
-        source = os.path.join(legacy_dir, name)
+        source = os.path.join(C.LEGACY_DATA_DIR, name)
         if os.path.isdir(source):
             shutil.move(source, target)
 

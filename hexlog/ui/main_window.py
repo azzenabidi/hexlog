@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage(
             f"Hexlog - characters, NPCs, locations, monsters, journal, VTT tokens. "
-            f"Data saved to ~/.hexlog/{C.DATA_SUBDIR}/"
+            f"Data saved to ~/.config/hexlog/{C.DATA_SUBDIR}/"
         )
         self.refresh()
 
@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
         body = QLabel(
             "A solo RPG companion for D&D-style play: characters, NPCs, locations, "
             "monsters, a searchable journal, and a virtual tabletop with draggable "
-            f"tokens. Everything autosaves to ~/.hexlog/{C.DATA_SUBDIR}/."
+            f"tokens. Everything autosaves to ~/.config/hexlog/{C.DATA_SUBDIR}/."
         )
         body.setWordWrap(True)
         link = QLabel(f'<a href="{C.GITHUB_URL}">{C.GITHUB_URL}</a>')
