@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hexlog - solo RPG companion: characters, NPCs, journal, and map scenes."""
+"""Hexlog - solo RPG companion: characters, NPCs, locations, journal, and VTT scenes."""
 
 import copy
 import json
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
-    QGraphicsEllipseItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
     QGroupBox,
@@ -59,7 +59,7 @@ COLOR_PALETTE = [
     "#9b59b6", "#e84393", "#16a085", "#d35400", "#8e44ad", "#2980b9",
 ]
 
-DEFAULT_DATA = {"characters": [], "npcs": [], "notes": [], "scenes": []}
+DEFAULT_DATA = {"characters": [], "npcs": [], "locations": [], "monsters": [], "notes": [], "scenes": []}
 
 
 def ensure_dirs():
@@ -105,6 +105,14 @@ def short_label(name):
         return word
     words = name.strip().split()
     return "".join(w[0] for w in words[:2])
+
+
+def kind_label(kind):
+    if kind == "npc":
+        return "NPC"
+    if kind == "location":
+        return "Location"
+    return "Character"
 
 
 class MentionHighlighter:
@@ -346,7 +354,180 @@ class NPCsTab(EntityTab):
         )
 
 
-class TokenItem(QGraphicsEllipseItem):
+class LocationsTab(EntityTab):
+    def __init__(self, data, on_change):
+        super().__init__(
+            data,
+            on_change,
+            kind="locations",
+            extra_fields=[("type", "Type")],
+            list_label="Locations",
+            form_title="Location Details",
+            entity_label="Location",
+        )
+
+
+class MonsterTab(QWidget):
+    def __init__(self, data, on_change):
+        super().__init__()
+        self.data = data
+        self.on_change = on_change
+        self.current_id = None
+
+        root = QHBoxLayout(self)
+
+        left = QVBoxLayout()
+        self.monster_list = QListWidget()
+        self.monster_list.currentItemChanged.connect(self._on_select)
+        self.add_btn = QPushButton("New Monster")
+        self.add_btn.clicked.connect(self._on_new)
+        self.delete_btn = QPushButton("Delete Monster")
+        self.delete_btn.clicked.connect(self._on_delete)
+        left.addWidget(QLabel("Monsters"))
+        left.addWidget(self.monster_list, 1)
+        left.addWidget(self.add_btn)
+        left.addWidget(self.delete_btn)
+        root.addLayout(left, 1)
+
+        form_box = QGroupBox("Monster Statblock")
+        form = QFormLayout(form_box)
+        self.name_edit = QLineEdit()
+        self.cr_edit = QLineEdit()
+        self.cr_edit.setPlaceholderText("e.g. 1/2, 3, 14")
+        self.link_edit = QLineEdit()
+        self.link_edit.setPlaceholderText("https://... (optional statblock link)")
+        self.ac_edit = QLineEdit()
+        self.hp_edit = QLineEdit()
+        self.speed_edit = QLineEdit()
+        self.abilities_edit = QLineEdit()
+        self.abilities_edit.setPlaceholderText("e.g. STR 14, DEX 12, CON 14, INT 8, WIS 10, CHA 8")
+        self.details_edit = QPlainTextEdit()
+        self.details_edit.setFixedHeight(160)
+
+        form.addRow("Name", self.name_edit)
+        form.addRow("CR", self.cr_edit)
+        form.addRow("Statblock Link", self.link_edit)
+        form.addRow("AC", self.ac_edit)
+        form.addRow("HP", self.hp_edit)
+        form.addRow("Speed", self.speed_edit)
+        form.addRow("Abilities", self.abilities_edit)
+        form.addRow("Traits / Actions", self.details_edit)
+
+        self.save_btn = QPushButton("Save Monster")
+        self.save_btn.clicked.connect(self._on_save)
+        form.addRow(self.save_btn)
+
+        self.status = QLabel("Create a monster to get started.")
+        form.addRow(self.status)
+        root.addWidget(form_box, 2)
+
+    def refresh(self):
+        self.refresh_list()
+        self.refresh_form()
+
+    def refresh_list(self):
+        self.monster_list.blockSignals(True)
+        self.monster_list.clear()
+        for monster in self.data["monsters"]:
+            cr = monster.get("cr", "")
+            label = f"{monster['name']}  (CR {cr})" if cr else monster["name"]
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, monster["id"])
+            self.monster_list.addItem(item)
+        self.monster_list.blockSignals(False)
+        if self.monster_list.count() > 0 and self.current_id is None:
+            self.monster_list.setCurrentRow(0)
+
+    def refresh_form(self):
+        if self.current_id is None:
+            self._clear_form()
+            self.status.setText("Create a monster to get started.")
+            return
+        monster = self._find(self.current_id)
+        if not monster:
+            return
+        self.name_edit.setText(monster.get("name", ""))
+        self.cr_edit.setText(monster.get("cr", ""))
+        self.link_edit.setText(monster.get("link", ""))
+        self.ac_edit.setText(monster.get("ac", ""))
+        self.hp_edit.setText(monster.get("hp", ""))
+        self.speed_edit.setText(monster.get("speed", ""))
+        self.abilities_edit.setText(monster.get("abilities", ""))
+        self.details_edit.setPlainText(monster.get("details", ""))
+        self.status.setText(f"Editing {monster['name']}")
+
+    def _clear_form(self):
+        for edit in (self.name_edit, self.cr_edit, self.link_edit,
+                     self.ac_edit, self.hp_edit, self.speed_edit, self.abilities_edit):
+            edit.clear()
+        self.details_edit.clear()
+
+    def _find(self, monster_id):
+        for monster in self.data["monsters"]:
+            if monster["id"] == monster_id:
+                return monster
+        return None
+
+    def _on_select(self, current, _previous):
+        if current is None:
+            self.current_id = None
+            self._clear_form()
+            return
+        self.current_id = current.data(Qt.ItemDataRole.UserRole)
+        self.refresh_form()
+
+    def _on_new(self):
+        self.current_id = None
+        self.monster_list.setCurrentItem(None)
+        self._clear_form()
+        self.name_edit.setFocus()
+        self.status.setText("New monster - fill in the fields and press Save Monster.")
+
+    def _on_save(self):
+        name = self.name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, APP_NAME, "A monster needs a name.")
+            return
+        values = {
+            "name": name,
+            "cr": self.cr_edit.text().strip(),
+            "link": self.link_edit.text().strip(),
+            "ac": self.ac_edit.text().strip(),
+            "hp": self.hp_edit.text().strip(),
+            "speed": self.speed_edit.text().strip(),
+            "abilities": self.abilities_edit.text().strip(),
+            "details": self.details_edit.toPlainText().strip(),
+        }
+        if self.current_id is None:
+            monster = {"id": uuid.uuid4().hex[:12], **values}
+            self.data["monsters"].append(monster)
+            self.current_id = monster["id"]
+        else:
+            monster = self._find(self.current_id)
+            monster.update(values)
+        self.refresh_list()
+        self.refresh_form()
+        self.on_change()
+        self.status.setText(f"Saved {name}.")
+
+    def _on_delete(self):
+        if self.current_id is None:
+            return
+        monster = self._find(self.current_id)
+        answer = QMessageBox.question(
+            self,
+            APP_NAME,
+            f"Delete monster '{monster['name']}'?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.data["monsters"] = [m for m in self.data["monsters"] if m["id"] != self.current_id]
+        self.current_id = None
+        self.refresh()
+        self.on_change()
+
+
+class TokenItem(QGraphicsRectItem):
     def __init__(self, entity_id, kind, name, color, diameter=46):
         super().__init__(-diameter / 2, -diameter / 2, diameter, diameter)
         self.entity_id = entity_id
@@ -359,22 +540,27 @@ class TokenItem(QGraphicsEllipseItem):
         if kind == "npc":
             pen.setStyle(Qt.PenStyle.DashLine)
         self.setPen(pen)
-        self.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable, True)
-        self.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setZValue(1)
         self.setToolTip(
-            f"{'NPC' if kind == 'npc' else 'Character'}: {name}\n(drag to move, right-click to remove)"
+            f"{kind_label(kind)}: {name}\n(drag to move, right-click to remove)"
         )
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        super().paint(painter, option, widget)
+        painter.setBrush(self.brush())
+        painter.setPen(self.pen())
+        rect = QRectF(-self.diameter / 2, -self.diameter / 2, self.diameter, self.diameter)
+        if self.kind == "location":
+            painter.drawRect(rect)
+        else:
+            painter.drawEllipse(rect)
         painter.setPen(QColor("white"))
         font = painter.font()
         font.setBold(True)
         font.setPointSizeF(max(6.0, self.diameter * 0.22))
         painter.setFont(font)
-        rect = QRectF(-self.diameter / 2, -self.diameter / 2, self.diameter, self.diameter)
         fm = QFontMetricsF(font)
         label = self._label
         if fm.horizontalAdvance(label) > self.diameter * 0.9:
@@ -710,7 +896,7 @@ class NotesTab(QWidget):
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText(
             "Write your journal here.\n"
-            "Use the character/NPC buttons below to add dialogue or @mentions - matching names are highlighted."
+            "Use the character/NPC/location buttons below to add dialogue or @mentions - matching names are highlighted."
         )
         right.addWidget(self.editor, 1)
 
@@ -728,7 +914,8 @@ class NotesTab(QWidget):
         root.addLayout(right, 3)
 
         self.highlighter = MentionHighlighter(
-            self.editor, lambda: self.data["characters"] + self.data["npcs"]
+            self.editor,
+            lambda: self.data["characters"] + self.data["npcs"] + self.data["locations"],
         )
         self.editor.textChanged.connect(self.highlighter.rehighlight)
 
@@ -745,9 +932,10 @@ class NotesTab(QWidget):
                 widget.deleteLater()
         self._add_entity_rows(self.data["characters"], prefix="")
         self._add_entity_rows(self.data["npcs"], prefix="NPC ")
-        if not self.data["characters"] and not self.data["npcs"]:
+        self._add_entity_rows(self.data["locations"], prefix="Location ")
+        if not self.data["characters"] and not self.data["npcs"] and not self.data["locations"]:
             empty = QLabel(
-                "No characters or NPCs yet - add them in the Characters/NPCs tabs to reference them here."
+                "No characters, NPCs, or locations yet - add them in the Characters/NPCs/Locations tabs to reference them here."
             )
             empty.setStyleSheet("color: #888;")
             self.char_bar_layout.addWidget(empty)
@@ -847,6 +1035,9 @@ class NotesTab(QWidget):
         npc_refs = [
             npc["id"] for npc in self.data["npcs"] if npc["name"] and npc["name"] in text
         ]
+        loc_refs = [
+            loc["id"] for loc in self.data["locations"] if loc["name"] and loc["name"] in text
+        ]
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         title = self.title_edit.text().strip()
         if self.current_note_id is None:
@@ -857,6 +1048,7 @@ class NotesTab(QWidget):
                 "timestamp": timestamp,
                 "char_ids": char_refs,
                 "npc_ids": npc_refs,
+                "loc_ids": loc_refs,
             }
             self.data["notes"].insert(0, note)
             self.current_note_id = note["id"]
@@ -867,10 +1059,11 @@ class NotesTab(QWidget):
             note["timestamp"] = timestamp
             note["char_ids"] = char_refs
             note["npc_ids"] = npc_refs
+            note["loc_ids"] = loc_refs
         self.refresh_note_list()
         self.on_change()
         self.status.setText(
-            f"Saved. Referenced characters: {len(char_refs)}, NPCs: {len(npc_refs)}"
+            f"Saved. Referenced characters: {len(char_refs)}, NPCs: {len(npc_refs)}, locations: {len(loc_refs)}"
         )
 
     def _on_delete_note(self):
@@ -898,17 +1091,21 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.characters_tab = CharactersTab(self.data, self.save_and_refresh)
         self.npcs_tab = NPCsTab(self.data, self.save_and_refresh)
+        self.locations_tab = LocationsTab(self.data, self.save_and_refresh)
+        self.monsters_tab = MonsterTab(self.data, self.save_and_refresh)
         self.notes_tab = NotesTab(self.data, self.save_and_refresh)
         self.maps_tab = MapsTab(self.data, self.save_and_refresh)
         self.tabs.addTab(self.characters_tab, "Characters")
         self.tabs.addTab(self.npcs_tab, "NPCs")
+        self.tabs.addTab(self.locations_tab, "Locations")
+        self.tabs.addTab(self.monsters_tab, "Monsters")
         self.tabs.addTab(self.notes_tab, "Journal")
-        self.tabs.addTab(self.maps_tab, "Maps & Scenes")
+        self.tabs.addTab(self.maps_tab, "VTT")
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
 
         self.statusBar().showMessage(
-            "Hexlog - characters, NPCs, journal references, map tokens. Data saved to ~/.hexlog/"
+            "Hexlog - characters, NPCs, locations, monsters, journal, VTT tokens. Data saved to ~/.hexlog/"
         )
         self.refresh()
 
@@ -919,13 +1116,15 @@ class MainWindow(QMainWindow):
     def refresh(self):
         self.characters_tab.refresh()
         self.npcs_tab.refresh()
+        self.locations_tab.refresh()
+        self.monsters_tab.refresh()
         self.notes_tab.refresh()
         self.maps_tab.refresh()
 
     def _on_tab_changed(self, index):
-        if index == 2:
+        if index == 4:
             self.notes_tab.refresh()
-        elif index == 3:
+        elif index == 5:
             self.maps_tab.refresh()
 
 

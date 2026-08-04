@@ -1,6 +1,6 @@
 # Hexlog
 
-A solo RPG companion for D&D-style play — manage characters, NPCs, a journal, and map scenes with draggable tokens.
+A solo RPG companion for D&D-style play — manage characters, NPCs, locations, monster statblocks, a journal, and a virtual tabletop (VTT) with draggable tokens.
 
 ![PySide6](https://img.shields.io/badge/PySide6-%3E%3D6.6-41cd52)
 
@@ -8,8 +8,10 @@ A solo RPG companion for D&D-style play — manage characters, NPCs, a journal, 
 
 - **Characters** — name, race, class, description, and a token color for maps.
 - **NPCs** — same as characters but with a role, plus dashed-outline map tokens so they stand out.
-- **Journal** — session notes with one-click dialogue and `@mention` insertion; character/NPC names are highlighted inline and references are tracked per note.
-- **Maps & Scenes** — load a battle/area map image, drop character and NPC tokens on it, drag them around, and save the scene.
+- **Locations** — name, type, and description; easily referenced in the journal.
+- **Monsters** — statblock reference: name, CR, an optional link, and written details (AC, HP, speed, abilities, traits/actions).
+- **Journal** — session notes with one-click dialogue and `@mention` insertion; character/NPC/location names are highlighted inline and references are tracked per note.
+- **VTT** — load a battle/area map image, drop character and NPC tokens on it, drag them around, and save the scene.
 
 ## Requirements
 
@@ -30,7 +32,7 @@ Hexlog stores everything in `~/.hexlog/`:
 
 ```
 ~/.hexlog/
-  data.json   # characters, NPCs, notes, scenes
+  data.json   # characters, NPCs, locations, monsters, notes, scenes
   maps/       # map images copied here
 ```
 
@@ -38,6 +40,6 @@ On first run it automatically imports data saved by older builds that lived in `
 
 ## Usage notes
 
-- On the Maps tab: click a character/NPC in the dropdown, press **Add Token To Map**, then click the map to place it.
+- On the VTT tab: click a character or NPC in the dropdown, press **Add Token To Map**, then click the map to place it.
 - Right-click a token to remove it; drag to reposition. Press **Save Scene** to persist token positions.
 - `+` / `-` zoom, **Fit** to fit the map in the view.
