@@ -1,10 +1,18 @@
 """Main application window wiring the tabs together."""
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMainWindow, QTabWidget, QToolBar
+from PySide6.QtWidgets import (
+    QDialog,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QTabWidget,
+    QToolBar,
+    QVBoxLayout,
+)
 
-from hexlog import constants as C
+from hexlog import __version__, constants as C
 from hexlog.storage import Store
 from hexlog.ui.entities import CharactersTab, LocationsTab, MonsterTab, NPCsTab
 from hexlog.ui.notes import NotesTab
@@ -37,6 +45,7 @@ class MainWindow(QMainWindow):
         self._save_timer.timeout.connect(self._flush)
 
         self._setup_theme_toggle()
+        self._setup_help_menu()
 
         self.tabs = QTabWidget()
         self.characters_tab = CharactersTab(self.store, lambda: self._on_changed(self.characters_tab))
@@ -67,6 +76,35 @@ class MainWindow(QMainWindow):
         self.theme_action = QAction("☀ Light", self)
         self.theme_action.triggered.connect(self.toggle_theme)
         toolbar.addAction(self.theme_action)
+
+    def _setup_help_menu(self):
+        menu = self.menuBar().addMenu("&Help")
+        about_action = QAction("About Hexlog", self)
+        about_action.triggered.connect(self._show_about)
+        menu.addAction(about_action)
+
+    def _show_about(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"About {C.APP_NAME}")
+        layout = QVBoxLayout(dialog)
+        title = QLabel(f"<h2>{C.APP_NAME} {__version__}</h2>")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        body = QLabel(
+            "A solo RPG companion for D&D-style play: characters, NPCs, locations, "
+            "monsters, a searchable journal, and a virtual tabletop with draggable "
+            "tokens. Everything autosaves to ~/.hexlog/."
+        )
+        body.setWordWrap(True)
+        link = QLabel(f'<a href="{C.GITHUB_URL}">{C.GITHUB_URL}</a>')
+        link.setOpenExternalLinks(True)
+        link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(title)
+        layout.addWidget(body)
+        layout.addWidget(link)
+        layout.addWidget(close_btn)
+        dialog.exec()
 
     def toggle_theme(self):
         self.theme_name = toggle_theme_name(self.theme_name)

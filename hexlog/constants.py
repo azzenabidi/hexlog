@@ -9,6 +9,8 @@ import os
 import uuid
 
 APP_NAME = "Hexlog"
+# Project homepage used in the About dialog.
+GITHUB_URL = "https://github.com/azzenabidi/hexlog"
 # Data lives under the user's home so the app needs no install-time setup.
 DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog")
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
