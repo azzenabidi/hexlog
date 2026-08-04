@@ -1,20 +1,26 @@
-"""Journal: notes with dialogue/@mention insertion and highlighting."""
+"""Journal: notes with dialogue/@mention insertion and highlighting.
+
+Notes save themselves as you type (debounced through on_change), so there is
+no explicit Save button. A compact toolbar inserts dialogue or @mentions for
+any character, NPC, or location.
+"""
 
 import re
 from datetime import datetime
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QTextCharFormat
+from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -73,59 +79,62 @@ class NotesTab(QWidget):
         self.store = store
         self.on_change = on_change
         self.current_note_id = None
+        self._syncing = False
 
         root = QHBoxLayout(self)
 
-        # --- Left pane: list of notes ----------------------------------------
+        # --- Left pane: filter + list of notes ----------------------------
         left = QVBoxLayout()
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText("Filter notes...")
+        self.filter_edit.textChanged.connect(self.refresh_note_list)
         self.note_list = QListWidget()
         self.note_list.currentItemChanged.connect(self._on_note_select)
+        self.note_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.note_list.customContextMenuRequested.connect(self._show_context_menu)
         self.new_note_btn = QPushButton("New Note")
         self.new_note_btn.clicked.connect(self._on_new_note)
-        self.delete_note_btn = QPushButton("Delete Note")
-        self.delete_note_btn.clicked.connect(self._on_delete_note)
-        left.addWidget(QLabel("Journal"))
+        left.addWidget(self.filter_edit)
         left.addWidget(self.note_list, 1)
         left.addWidget(self.new_note_btn)
-        left.addWidget(self.delete_note_btn)
         root.addLayout(left, 1)
 
-        # --- Right pane: editor ------------------------------------------------
+        # --- Right pane: editor ---------------------------------------------
         right = QVBoxLayout()
-        # Scrollable strip of buttons for inserting dialogue/@mentions.
-        self.char_bar = QWidget()
-        self.char_bar_layout = QVBoxLayout(self.char_bar)
-        self.char_bar_layout.setContentsMargins(0, 0, 0, 0)
-        self.char_scroll = QScrollArea()
-        self.char_scroll.setWidget(self.char_bar)
-        self.char_scroll.setWidgetResizable(True)
-        self.char_scroll.setFixedHeight(120)
+        # Compact insertion toolbar: pick an entity, then insert dialogue or a
+        # @mention. The old per-entity button wall is gone.
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(QLabel("Insert:"))
+        self.mention_combo = QComboBox()
+        self.mention_combo.setMinimumWidth(180)
+        self.mention_combo.activated.connect(self._on_mention_target)
+        self.dialogue_btn = QPushButton('"Name: ..."')
+        self.dialogue_btn.clicked.connect(self._insert_dialogue)
+        self.mention_btn = QPushButton("@mention")
+        self.mention_btn.clicked.connect(self._insert_mention)
+        toolbar.addWidget(self.mention_combo)
+        toolbar.addWidget(self.dialogue_btn)
+        toolbar.addWidget(self.mention_btn)
+        toolbar.addStretch(1)
+        right.addLayout(toolbar)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Title:"))
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel("Title:"))
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("Session title or note heading")
-        top.addWidget(self.title_edit, 1)
-        right.addWidget(self.char_scroll)
-        right.addLayout(top)
+        self.title_edit.textChanged.connect(self._autosave)
+        title_row.addWidget(self.title_edit, 1)
+        right.addLayout(title_row)
+
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText(
-            "Write your journal here.\n"
-            "Use the character/NPC/location buttons below to add dialogue or @mentions - matching names are highlighted."
+            "Write your journal here. Matching character, NPC, and location names are highlighted."
         )
+        self.editor.textChanged.connect(self._autosave)
         right.addWidget(self.editor, 1)
 
-        bottom = QHBoxLayout()
-        self.save_btn = QPushButton("Save Note")
-        self.save_btn.clicked.connect(self._on_save_note)
-        self.clear_btn = QPushButton("Clear Editor")
-        self.clear_btn.clicked.connect(self._on_clear_editor)
-        bottom.addWidget(self.save_btn)
-        bottom.addWidget(self.clear_btn)
-        bottom.addStretch(1)
         self.status = QLabel("")
-        bottom.addWidget(self.status)
-        right.addLayout(bottom)
+        right.addWidget(self.status)
         root.addLayout(right, 3)
 
         self.highlighter = MentionHighlighter(
@@ -135,67 +144,87 @@ class NotesTab(QWidget):
         # Re-highlight on every keystroke to keep mentions current.
         self.editor.textChanged.connect(self.highlighter.rehighlight)
 
+        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(self._on_new_note)
+        self._delete_shortcut = QShortcut(
+            QKeySequence(QKeySequence.StandardKey.Delete), self.note_list
+        )
+        self._delete_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._delete_shortcut.activated.connect(self._on_delete_note)
+
     def refresh(self):
-        """Refresh the entity button bar, note list, and highlighting."""
-        self.refresh_entity_bar()
+        """Refresh the insertion toolbar, note list, and highlighting."""
+        self.refresh_mention_bar()
         self.refresh_note_list()
         self.highlighter.rehighlight()
 
-    def refresh_entity_bar(self):
-        """Rebuild the dialogue/@mention buttons from the current entities."""
-        # Tear down previous widgets explicitly or they leak as orphaned children.
-        while self.char_bar_layout.count():
-            item = self.char_bar_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self._add_entity_rows(self.store[C.CHARACTERS], prefix="")
-        self._add_entity_rows(self.store[C.NPCS], prefix="NPC ")
-        self._add_entity_rows(self.store[C.LOCATIONS], prefix="Location ")
-        if not self.store[C.CHARACTERS] and not self.store[C.NPCS] and not self.store[C.LOCATIONS]:
-            empty = QLabel(
-                "No characters, NPCs, or locations yet - add them in the "
-                "Characters/NPCs/Locations tabs to reference them here."
-            )
-            empty.setStyleSheet("color: #888;")
-            self.char_bar_layout.addWidget(empty)
+    def refresh_mention_bar(self):
+        """Rebuild the entity dropdown for dialogue/@mention insertion."""
+        self.mention_combo.blockSignals(True)
+        self.mention_combo.clear()
+        for kind, entities in (
+            ("", self.store[C.CHARACTERS]),
+            ("NPC", self.store[C.NPCS]),
+            ("Location", self.store[C.LOCATIONS]),
+        ):
+            for entity in entities:
+                name = entity.get("name")
+                if not name:
+                    continue
+                label = f"{kind}: {name}" if kind else name
+                self.mention_combo.addItem(label, name)
+        if self.mention_combo.count() == 0:
+            self.mention_combo.addItem("No characters, NPCs, or locations yet", None)
+            self.dialogue_btn.setEnabled(False)
+            self.mention_btn.setEnabled(False)
+        else:
+            self.dialogue_btn.setEnabled(True)
+            self.mention_btn.setEnabled(True)
+        self.mention_combo.blockSignals(False)
 
-    def _add_entity_rows(self, entities, prefix=""):
-        """Add one row of buttons per entity for quick insertion."""
-        for entity in entities:
-            row = QHBoxLayout()
-            color = QColor(entity.get("color", "#888"))
-            name_label = QLabel(prefix + entity["name"])
-            name_label.setStyleSheet(f"color: {color.name()}; font-weight: bold;")
-            dialogue_btn = QPushButton(f'{entity["name"]}: "...')
-            mention_btn = QPushButton("@mention")
-            # Lambdas capture n via a default arg so the entity name is bound
-            # at click time rather than whichever name the loop ended on.
-            dialogue_btn.clicked.connect(lambda _=False, n=entity["name"]: self._insert_dialogue(n))
-            mention_btn.clicked.connect(lambda _=False, n=entity["name"]: self._insert_mention(n))
-            row.addWidget(name_label)
-            row.addWidget(dialogue_btn)
-            row.addWidget(mention_btn)
-            row.addStretch(1)
-            container = QWidget()
-            container.setLayout(row)
-            self.char_bar_layout.addWidget(container)
+    def _on_mention_target(self, _index):
+        """Keep buttons enabled/disabled in sync with the combo selection."""
+        enabled = self.mention_combo.currentData() is not None
+        self.dialogue_btn.setEnabled(enabled)
+        self.mention_btn.setEnabled(enabled)
+
+    def _selected_name(self):
+        return self.mention_combo.currentData()
+
+    def _note_text(self, note):
+        stamp = note.get("timestamp", "")
+        title = note.get("title") or "Untitled"
+        return f"{stamp}  {title}"
 
     def refresh_note_list(self):
-        """Rebuild the note list, restoring the current selection."""
+        """Rebuild the note list, honoring the filter and current selection."""
         self.note_list.blockSignals(True)
         self.note_list.clear()
+        query = self.filter_edit.text().strip().lower()
         for note in self.store[C.NOTES]:
-            stamp = note.get("timestamp", "")
-            title = note.get("title") or "Untitled"
-            item = QListWidgetItem(f"{stamp}  {title}")
+            if query and query not in self._note_text(note).lower():
+                continue
+            item = QListWidgetItem(self._note_text(note))
             item.setData(Qt.ItemDataRole.UserRole, note["id"])
             self.note_list.addItem(item)
+        if self.note_list.count() == 0:
+            hint = QListWidgetItem("No notes yet - click New Note.")
+            hint.setFlags(Qt.ItemFlag.NoItemFlags)
+            hint.setForeground(QColor("#6b6f78"))
+            self.note_list.addItem(hint)
         self.note_list.blockSignals(False)
         if self.current_note_id is not None:
             index = self._note_index(self.current_note_id)
             if index >= 0:
+                self.note_list.blockSignals(True)
                 self.note_list.setCurrentRow(index)
+                self.note_list.blockSignals(False)
+
+    def _refresh_note_label(self, note):
+        for i in range(self.note_list.count()):
+            item = self.note_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == note["id"]:
+                item.setText(self._note_text(note))
+                return
 
     def _note_index(self, note_id):
         for i, note in enumerate(self.store[C.NOTES]):
@@ -206,8 +235,55 @@ class NotesTab(QWidget):
     def _find_note(self, note_id):
         return self.store.find(C.NOTES, note_id)
 
-    def _insert_dialogue(self, name):
+    def _autosave(self):
+        """Persist the current note (creating it on first keystroke)."""
+        if self._syncing:
+            return
+        note = self._ensure_note()
+        note["title"] = self.title_edit.text().strip()
+        text = self.editor.toPlainText()
+        note["text"] = text.strip()
+        note["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        note["char_ids"] = self._referenced(self.store[C.CHARACTERS], text)
+        note["npc_ids"] = self._referenced(self.store[C.NPCS], text)
+        note["loc_ids"] = self._referenced(self.store[C.LOCATIONS], text)
+        self._refresh_note_label(note)
+        self.on_change()
+
+    @staticmethod
+    def _referenced(entities, text):
+        """Ids of entities whose name appears in the note text (lenient match)."""
+        return [e["id"] for e in entities if e.get("name") and e["name"] in text]
+
+    def _ensure_note(self):
+        """Return the note being edited, lazily creating a draft if needed."""
+        if self.current_note_id is not None:
+            return self._find_note(self.current_note_id)
+        note = {
+            "id": C.new_id(),
+            "title": "",
+            "text": "",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "char_ids": [],
+            "npc_ids": [],
+            "loc_ids": [],
+        }
+        self.store.prepend(C.NOTES, note)  # newest note first
+        self.current_note_id = note["id"]
+        self.refresh_note_list()
+        index = self._note_index(note["id"])
+        if index >= 0:
+            self.note_list.blockSignals(True)
+            self.note_list.setCurrentRow(index)
+            self.note_list.blockSignals(False)
+        self.on_change()
+        return note
+
+    def _insert_dialogue(self):
         """Insert a newline, `Name: "`, and place the cursor between the quotes."""
+        name = self._selected_name()
+        if not name:
+            return
         text_cursor = self.editor.textCursor()
         text_cursor.insertText(f"\n{name}: \"")
         inner = self.editor.textCursor().position()
@@ -218,79 +294,45 @@ class NotesTab(QWidget):
         self.editor.setFocus()
         self.highlighter.rehighlight()
 
-    def _insert_mention(self, name):
+    def _insert_mention(self):
+        name = self._selected_name()
+        if not name:
+            return
         self.editor.textCursor().insertText(f"@{name} ")
         self.editor.setFocus()
         self.highlighter.rehighlight()
 
     def _on_note_select(self, current, _previous):
         """Load the selected note's title and text into the editor."""
-        if current is None:
-            self.current_note_id = None
-            self.editor.clear()
-            self.title_edit.clear()
-            return
-        self.current_note_id = current.data(Qt.ItemDataRole.UserRole)
-        note = self._find_note(self.current_note_id)
-        self.editor.setPlainText(note.get("text", ""))
-        self.title_edit.setText(note.get("title", ""))
-        self.status.setText(f"Loaded note from {note.get('timestamp', '')}")
+        note_id = None if current is None else current.data(Qt.ItemDataRole.UserRole)
+        self.current_note_id = note_id
+        self._syncing = True
+        try:
+            if note_id is None:
+                self.editor.clear()
+                self.title_edit.clear()
+                self.status.setText("")
+                return
+            note = self._find_note(note_id)
+            if not note:
+                return
+            self.editor.setPlainText(note.get("text", ""))
+            self.title_edit.setText(note.get("title", ""))
+            self.status.setText(f"Loaded note from {note.get('timestamp', '')}")
+        finally:
+            self._syncing = False
 
     def _on_new_note(self):
         self.current_note_id = None
         self.note_list.setCurrentItem(None)
-        self.editor.clear()
-        self.title_edit.clear()
+        self._syncing = True
+        try:
+            self.editor.clear()
+            self.title_edit.clear()
+        finally:
+            self._syncing = False
         self.title_edit.setFocus()
-        self.status.setText("New note - write below, then press Save Note.")
-
-    def _on_clear_editor(self):
-        self.editor.clear()
-
-    def _on_save_note(self):
-        """Create or update a note, recording which entities its text mentions."""
-        text = self.editor.toPlainText().strip()
-        if not text and not self.title_edit.text().strip():
-            self.status.setText("Nothing to save.")
-            return
-        # A plain substring match (no word boundaries) keeps this lenient:
-        # even partial or pluralized mentions count as references.
-        char_refs = [
-            ch["id"] for ch in self.store[C.CHARACTERS] if ch["name"] and ch["name"] in text
-        ]
-        npc_refs = [
-            npc["id"] for npc in self.store[C.NPCS] if npc["name"] and npc["name"] in text
-        ]
-        loc_refs = [
-            loc["id"] for loc in self.store[C.LOCATIONS] if loc["name"] and loc["name"] in text
-        ]
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        title = self.title_edit.text().strip()
-        if self.current_note_id is None:
-            note = {
-                "id": C.new_id(),
-                "title": title,
-                "text": text,
-                "timestamp": timestamp,
-                "char_ids": char_refs,
-                "npc_ids": npc_refs,
-                "loc_ids": loc_refs,
-            }
-            self.store.prepend(C.NOTES, note)  # newest note first
-            self.current_note_id = note["id"]
-        else:
-            note = self._find_note(self.current_note_id)
-            note["title"] = title
-            note["text"] = text
-            note["timestamp"] = timestamp
-            note["char_ids"] = char_refs
-            note["npc_ids"] = npc_refs
-            note["loc_ids"] = loc_refs
-        self.refresh_note_list()
-        self.on_change()
-        self.status.setText(
-            f"Saved. Referenced characters: {len(char_refs)}, NPCs: {len(npc_refs)}, locations: {len(loc_refs)}"
-        )
+        self.status.setText("New note - start typing, it saves automatically.")
 
     def _on_delete_note(self):
         if self.current_note_id is None:
@@ -301,7 +343,19 @@ class NotesTab(QWidget):
         self.store.remove(C.NOTES, self.current_note_id)
         self.current_note_id = None
         self.refresh_note_list()
-        self.editor.clear()
-        self.title_edit.clear()
+        self._syncing = True
+        try:
+            self.editor.clear()
+            self.title_edit.clear()
+        finally:
+            self._syncing = False
         self.status.setText("Note deleted.")
         self.on_change()
+
+    def _show_context_menu(self, pos):
+        menu = QMenu(self)
+        menu.addAction("New Note", self._on_new_note)
+        item = self.note_list.itemAt(pos)
+        if item is not None and item.flags() & Qt.ItemFlag.ItemIsSelectable:
+            menu.addAction("Delete", self._on_delete_note)
+        menu.exec(self.note_list.mapToGlobal(pos))

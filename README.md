@@ -11,8 +11,8 @@ A solo RPG companion for D&D-style play — manage characters, NPCs, locations, 
 - **NPCs** — same as characters but with a role, plus dashed-outline map tokens so they stand out.
 - **Locations** — name, type, and description; easily referenced in the journal.
 - **Monsters** — statblock reference: name, CR, an optional link, and written details (AC, HP, speed, abilities, traits/actions).
-- **Journal** — session notes with one-click dialogue and `@mention` insertion; character/NPC/location names are highlighted inline and references are tracked per note.
-- **VTT** — load a battle/area map image, drop character and NPC tokens on it, drag them around, and save the scene.
+- **Journal** — session notes with dialogue and `@mention` insertion; character/NPC/location names are highlighted inline and references are tracked per note.
+- **VTT** — load a battle/area map image, drop character and NPC tokens on it, drag them around. Token positions autosave.
 
 ## Requirements
 
@@ -42,6 +42,7 @@ On first run Hexlog creates `~/.hexlog/` fresh; it never imports data from any o
 
 ## Usage notes
 
-- On the VTT tab: click a character or NPC in the dropdown, press **Add Token To Map**, then click the map to place it.
-- Right-click a token to remove it; drag to reposition. Press **Save Scene** to persist token positions.
+- Everything autosaves as you type or drag - there are no Save buttons. `Ctrl+N` starts a new record; right-click a list for New/Delete (or press `Delete` while a list is focused).
+- On the VTT tab: click a character or NPC in the dropdown, press **Add Token To Map**, then click the map to place it. Positions are saved automatically.
+- Right-click a token to remove it; drag to reposition.
 - `+` / `-` zoom, **Fit** to fit the map in the view.

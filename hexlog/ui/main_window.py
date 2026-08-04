@@ -1,5 +1,6 @@
 """Main application window wiring the tabs together."""
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
 from hexlog import constants as C
@@ -10,7 +11,14 @@ from hexlog.ui.vtt import MapsTab
 
 
 class MainWindow(QMainWindow):
-    """Top-level window hosting all the tabs on a shared data store."""
+    """Top-level window hosting all the tabs on a shared data store.
+
+    Every change in any tab funnels through on_change(), which debounces the
+    save so typing stays responsive while the JSON is written to disk a moment
+    after you stop editing.
+    """
+
+    AUTOSAVE_DELAY_MS = 600
 
     def __init__(self):
         super().__init__()
@@ -19,13 +27,18 @@ class MainWindow(QMainWindow):
         # One store shared by every tab; a single save() persists all changes.
         self.store = Store()
 
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(self.AUTOSAVE_DELAY_MS)
+        self._save_timer.timeout.connect(self._flush)
+
         self.tabs = QTabWidget()
-        self.characters_tab = CharactersTab(self.store, self.save_and_refresh)
-        self.npcs_tab = NPCsTab(self.store, self.save_and_refresh)
-        self.locations_tab = LocationsTab(self.store, self.save_and_refresh)
-        self.monsters_tab = MonsterTab(self.store, self.save_and_refresh)
-        self.notes_tab = NotesTab(self.store, self.save_and_refresh)
-        self.maps_tab = MapsTab(self.store, self.save_and_refresh)
+        self.characters_tab = CharactersTab(self.store, self.on_change)
+        self.npcs_tab = NPCsTab(self.store, self.on_change)
+        self.locations_tab = LocationsTab(self.store, self.on_change)
+        self.monsters_tab = MonsterTab(self.store, self.on_change)
+        self.notes_tab = NotesTab(self.store, self.on_change)
+        self.maps_tab = MapsTab(self.store, self.on_change)
         self.tabs.addTab(self.characters_tab, "Characters")
         self.tabs.addTab(self.npcs_tab, "NPCs")
         self.tabs.addTab(self.locations_tab, "Locations")
@@ -40,8 +53,16 @@ class MainWindow(QMainWindow):
         )
         self.refresh()
 
-    def save_and_refresh(self):
-        """Persist changes and refresh every tab in one shot."""
+    def on_change(self):
+        """Schedule a save+refresh; edits are persisted when typing pauses."""
+        self._save_timer.start()
+
+    def flush(self):
+        """Persist and refresh immediately (used on close and structural ops)."""
+        self._save_timer.stop()
+        self._flush()
+
+    def _flush(self):
         self.store.save()
         self.refresh()
 
@@ -59,3 +80,8 @@ class MainWindow(QMainWindow):
             self.notes_tab.refresh()
         elif index == 5:
             self.maps_tab.refresh()
+
+    def closeEvent(self, event):
+        """Make sure anything still debounced hits the disk."""
+        self.flush()
+        super().closeEvent(event)

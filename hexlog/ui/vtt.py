@@ -168,6 +168,7 @@ class MapView(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setScene(self.map_tab.scene)
+        self.setBackgroundBrush(QBrush(QColor("#1f1f1f")))
 
     def mousePressEvent(self, event):
         # Right-click on a token removes it.
@@ -186,6 +187,12 @@ class MapView(QGraphicsView):
             )
             return
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # A drag may have moved a token - persist its new position.
+        super().mouseReleaseEvent(event)
+        self.map_tab._sync_scene_tokens()
+        self.map_tab.on_change()
 
     def wheelEvent(self, event):
         """Zoom in/out around the view center via the scroll wheel."""
@@ -232,8 +239,6 @@ class MapsTab(QWidget):
         self.entity_menu = QComboBox()
         self.add_token_btn = QPushButton("Add Token To Map")
         self.add_token_btn.clicked.connect(self._on_add_token)
-        self.save_scene_btn = QPushButton("Save Scene")
-        self.save_scene_btn.clicked.connect(self._on_save_scene)
         self.zoom_in_btn = QPushButton("+")
         self.zoom_in_btn.clicked.connect(lambda: self.view.scale(1.2, 1.2))
         self.zoom_out_btn = QPushButton("-")
@@ -243,7 +248,6 @@ class MapsTab(QWidget):
         toolbar.addWidget(self.load_map_btn)
         toolbar.addWidget(self.entity_menu)
         toolbar.addWidget(self.add_token_btn)
-        toolbar.addWidget(self.save_scene_btn)
         toolbar.addStretch(1)
         toolbar.addWidget(self.zoom_out_btn)
         toolbar.addWidget(self.zoom_in_btn)
@@ -440,25 +444,26 @@ class MapsTab(QWidget):
         )
         item.setPos(scene_pos)
         self.scene.addItem(item)
+        self._sync_scene_tokens()
+        self.on_change()
         self.status.setText(f"Placed {entity['name']}. Drag to reposition, right-click to remove.")
 
     def remove_token(self, item):
         self.scene.removeItem(item)
+        self._sync_scene_tokens()
+        self.on_change()
         self.status.setText(f"Removed {item.name}.")
+
+    def _sync_scene_tokens(self):
+        """Write the current on-canvas token positions into the scene record."""
+        if self.current_scene_id is None:
+            return
+        scene = self._find_scene(self.current_scene_id)
+        if scene is None:
+            return
+        tokens = [i.to_dict() for i in self.scene.items() if isinstance(i, TokenItem)]
+        scene["tokens"] = tokens
 
     def _fit_view(self):
         """Zoom to fit the whole scene in the viewport."""
         self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-
-    def _on_save_scene(self):
-        """Persist the current token positions into the scene record."""
-        if self.current_scene_id is None:
-            return
-        scene = self._find_scene(self.current_scene_id)
-        tokens = []
-        for item in self.scene.items():
-            if isinstance(item, TokenItem):
-                tokens.append(item.to_dict())
-        scene["tokens"] = tokens
-        self.on_change()
-        self.status.setText(f"Scene '{scene['name']}' saved with {len(tokens)} token(s).")
