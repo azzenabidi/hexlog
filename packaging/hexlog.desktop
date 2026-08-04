@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Hexlog
+Comment=Solo RPG companion for D&D-style play
+Exec=hexlog
+Icon=hexlog
+Terminal=false
+Type=Application
+Categories=Game;RolePlaying;

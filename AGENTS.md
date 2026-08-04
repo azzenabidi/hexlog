@@ -13,7 +13,7 @@ tokens. Data is persisted as JSON under `~/.hexlog/`. There are no save buttons
 
 ```bash
 ./run.sh               # create venv if needed, then launch the app
-./package.sh           # build a distributable PyInstaller app into dist/
+./package.sh           # build a distributable AppImage into dist/
 .venv/bin/python -m pytest          # run the test suite
 .venv/bin/flake8 .                  # lint (CI uses this, see below)
 ```
@@ -40,7 +40,7 @@ tokens. Data is persisted as JSON under `~/.hexlog/`. There are no save buttons
 
 ## Coding conventions
 
-- Python 3.10+, PySide6 >= 6.6. No third-party deps beyond PySide6 and PyInstaller.
+- Python 3.10+, PySide6 >= 6.6. No third-party deps beyond PySide6.
 - Style: PEP 8, 127-column lines, complexity <= 10 (enforced by CI's flake8).
 - Imports use absolute package paths: `from hexlog import constants as C`.
 - Module-level docstrings describe what the module owns. Public classes and

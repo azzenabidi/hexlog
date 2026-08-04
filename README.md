@@ -30,13 +30,20 @@ For local development:
 
 `run.sh` creates a virtual environment and installs dependencies on first use.
 
-For packaging a distributable app with PyInstaller:
+For packaging a distributable desktop app as an AppImage:
 
 ```bash
 ./package.sh
 ```
 
-This builds a bundled app under `dist/hexlog/`. The packaging script expects a Python runtime that exposes a shared library, which is required by PyInstaller.
+This bundles a self-contained Python runtime ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)), the app and its PySide6 dependencies, and produces `dist/hexlog-<version>-<arch>.AppImage`. Just download that file, make it executable, and run it:
+
+```bash
+chmod +x dist/hexlog-*.AppImage
+./dist/hexlog-*.AppImage
+```
+
+The build downloads the Python runtime and `appimagetool` once and caches them under `build/`.
 
 ## Data storage
 
