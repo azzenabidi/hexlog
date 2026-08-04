@@ -3,6 +3,7 @@
 A solo RPG companion for D&D-style play — manage characters, NPCs, locations, monster statblocks, a journal, and a virtual tabletop (VTT) with draggable tokens.
 
 ![PySide6](https://img.shields.io/badge/PySide6-%3E%3D6.6-41cd52)
+![CI](https://img.shields.io/github/actions/workflow/status/azzenabidi/hexlog/python-app.yml)
 
 ## Features
 
