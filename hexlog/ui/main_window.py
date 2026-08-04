@@ -1,7 +1,8 @@
 """Main application window wiring the tabs together."""
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QMainWindow, QTabWidget, QToolBar, QAction
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMainWindow, QTabWidget, QToolBar
 
 from hexlog import constants as C
 from hexlog.storage import Store
