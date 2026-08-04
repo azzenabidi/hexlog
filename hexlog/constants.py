@@ -12,8 +12,6 @@ APP_NAME = "Hexlog"
 # Data lives under the user's home so the app needs no install-time setup.
 DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog")
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
-# Older builds stored data here; migrate on first run if present.
-LEGACY_DATA_DIR = os.path.join(os.path.expanduser("~"), ".solo_dnd")
 # Map images are copied here; scenes reference them by basename only.
 MAPS_DIR = os.path.join(DATA_DIR, "maps")
 # Character/NPC token images are copied here for the same reason.

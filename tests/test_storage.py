@@ -11,13 +11,12 @@ from hexlog import constants as C
 @pytest.fixture
 def isolated_paths(tmp_path, monkeypatch):
     """Point the storage layer at a throwaway directory."""
-    # DATA_DIR must not exist yet so the legacy-migration path can be tested.
+    # DATA_DIR must not exist yet so a fresh start creates it from scratch.
     data_dir = tmp_path / "data"
     monkeypatch.setattr(C, "DATA_DIR", str(data_dir))
     monkeypatch.setattr(C, "DATA_FILE", str(data_dir / "data.json"))
     monkeypatch.setattr(C, "MAPS_DIR", str(data_dir / "maps"))
     monkeypatch.setattr(C, "TOKENS_DIR", str(data_dir / "tokens"))
-    monkeypatch.setattr(C, "LEGACY_DATA_DIR", str(tmp_path / "legacy"))
 
 
 def test_fresh_store_has_default_shape(isolated_paths):
@@ -79,21 +78,6 @@ def test_load_backfills_missing_keys(isolated_paths):
     assert store[C.CHARACTERS] == [{"id": "c1"}]
     for kind in (C.NPCS, C.LOCATIONS, C.MONSTERS, C.NOTES, C.SCENES):
         assert store[kind] == []
-
-
-def test_legacy_migration_copies_and_rewrites_map_paths(isolated_paths):
-    from hexlog import storage
-
-    legacy_data = {
-        "scenes": [{"id": "s1", "map_path": os.path.join(C.LEGACY_DATA_DIR, "maps", "m.png")}]
-    }
-    os.makedirs(C.LEGACY_DATA_DIR, exist_ok=True)
-    with open(os.path.join(C.LEGACY_DATA_DIR, "data.json"), "w") as fh:
-        json.dump(legacy_data, fh)
-
-    data = storage.load_data()
-    assert os.path.isdir(C.DATA_DIR)
-    assert data["scenes"][0]["map_path"] == "m.png"
 
 
 def test_next_color_rotates(isolated_paths):

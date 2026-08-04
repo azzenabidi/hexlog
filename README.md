@@ -38,7 +38,7 @@ Hexlog stores everything in `~/.hexlog/`:
   tokens/     # uploaded character/NPC token images copied here
 ```
 
-On first run it automatically imports data saved by older builds that lived in `~/.solo_dnd/` (then keeps using `~/.hexlog/` going forward).
+On first run Hexlog creates `~/.hexlog/` fresh; it never imports data from any other location.
 
 ## Usage notes
 

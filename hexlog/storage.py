@@ -8,21 +8,12 @@ helpers; the main window calls Store.save() whenever a tab reports a change.
 import copy
 import json
 import os
-import shutil
 
 from hexlog import constants as C
 
 
 def ensure_dirs() -> None:
-    """Create the app's data directories, migrating the legacy folder once."""
-    # Only migrate when the new dir does not exist yet, so a fresh setup
-    # never clobbers an already-populated install.
-    if not os.path.exists(C.DATA_DIR) and os.path.isdir(C.LEGACY_DATA_DIR):
-        try:
-            shutil.copytree(C.LEGACY_DATA_DIR, C.DATA_DIR)
-        except Exception:
-            # Copy is best-effort; a partial failure still leaves a usable app.
-            pass
+    """Create the app's data directories if they do not exist."""
     os.makedirs(C.MAPS_DIR, exist_ok=True)
     os.makedirs(C.TOKENS_DIR, exist_ok=True)
 
@@ -39,7 +30,6 @@ def load_data() -> dict:
     # Backfill keys added in newer versions for compatibility with old files.
     for key in C.DEFAULT_DATA:
         data.setdefault(key, [])
-    _migrate_legacy_map_paths(data)
     return data
 
 
@@ -48,15 +38,6 @@ def save_data(data: dict) -> None:
     ensure_dirs()
     with open(C.DATA_FILE, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
-
-
-def _migrate_legacy_map_paths(data: dict) -> None:
-    """Rewrite legacy absolute map paths to basenames under the new layout."""
-    legacy_prefix = C.LEGACY_DATA_DIR + os.sep
-    for scene in data.get("scenes", []):
-        mp = scene.get("map_path")
-        if mp and os.path.isabs(mp) and mp.startswith(legacy_prefix):
-            scene["map_path"] = os.path.basename(mp)
 
 
 def next_color(entities) -> str:
