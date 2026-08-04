@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Hexlog - solo RPG companion: characters, NPCs, locations, journal, and VTT scenes."""
+"""
+Hexlog - a solo RPG companion for D&D-style play.
 
-import copy
-import json
+Tracks characters, NPCs, locations and monster statblocks, provides a
+searchable journal with @mention highlighting, and a lightweight virtual
+tabletop (VTT) for placing image or color tokens on a map.
+
+All data is persisted as JSON in ~/.hexlog/ (data.json, maps/, tokens/).
+"""
+
+import copy  # deepcopy of the default data template
+import json  # persistence format
 import os
-import re
-import shutil
+import re  # word-boundary matching for mention highlighting
+import shutil  # copy user-chosen images into the app's data dir
 import sys
-import uuid
+import uuid  # short unique ids for every record
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QRectF
@@ -15,15 +23,15 @@ from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
-    QFontMetricsF,
+    QFontMetricsF,  # measure token label width before drawing
     QPainter,
+    QPainterPath,  # clip token images into circles/rects
     QPen,
     QPixmap,
-    QTextCharFormat,
+    QTextCharFormat,  # formatting for the journal's extra selections
 )
 from PySide6.QtWidgets import (
     QApplication,
-    QColorDialog,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -49,37 +57,54 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "Hexlog"
+# Data lives under the user's home so the app needs no install-time setup.
 DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog")
+# Older builds stored data here; migrate on first run if present.
 LEGACY_DATA_DIR = os.path.join(os.path.expanduser("~"), ".solo_dnd")
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
+# Map images are copied here; scenes reference them by basename only.
 MAPS_DIR = os.path.join(DATA_DIR, "maps")
+# Character/NPC token images are copied here for the same reason.
+TOKENS_DIR = os.path.join(DATA_DIR, "tokens")
 
+# Cycled through when creating new characters so tokens start visually distinct.
 COLOR_PALETTE = [
     "#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db",
     "#9b59b6", "#e84393", "#16a085", "#d35400", "#8e44ad", "#2980b9",
 ]
 
+# Canonical top-level keys. Newer files may miss some, so load_data backfills.
 DEFAULT_DATA = {"characters": [], "npcs": [], "locations": [], "monsters": [], "notes": [], "scenes": []}
 
 
 def ensure_dirs():
+    """Create the app's data directories, migrating the legacy folder once."""
+    # Only migrate when the new dir does not exist yet, so a fresh setup
+    # never clobbers an already-populated install.
     if not os.path.exists(DATA_DIR) and os.path.isdir(LEGACY_DATA_DIR):
         try:
             shutil.copytree(LEGACY_DATA_DIR, DATA_DIR)
         except Exception:
+            # Copy is best-effort; a partial failure still leaves a usable app.
             pass
     os.makedirs(MAPS_DIR, exist_ok=True)
+    os.makedirs(TOKENS_DIR, exist_ok=True)
 
 
 def load_data():
+    """Read the JSON store, falling back to a fresh template on any error."""
     ensure_dirs()
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except Exception:
+        # A missing or corrupt file must not crash the app on startup.
         data = copy.deepcopy(DEFAULT_DATA)
+    # Backfill keys added in newer versions for compatibility with old files.
     for key in DEFAULT_DATA:
         data.setdefault(key, [])
+    # Old builds stored map paths as absolute paths inside the legacy dir;
+    # rewrite them to bare basenames so they resolve under the new layout.
     for scene in data.get("scenes", []):
         mp = scene.get("map_path")
         if mp and os.path.isabs(mp) and mp.startswith(LEGACY_DATA_DIR + os.sep):
@@ -88,16 +113,19 @@ def load_data():
 
 
 def save_data(data):
+    """Persist the whole store to disk as pretty-printed UTF-8 JSON."""
     ensure_dirs()
     with open(DATA_FILE, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2, ensure_ascii=False)
 
 
 def next_color(entities):
+    """Pick the next palette color, rotating so repeats look intentional."""
     return COLOR_PALETTE[len(entities) % len(COLOR_PALETTE)]
 
 
 def short_label(name):
+    """Derive a compact token label: first word, or initials of the first two."""
     if not name:
         return "?"
     word = name.strip().split()[0]
@@ -108,6 +136,7 @@ def short_label(name):
 
 
 def kind_label(kind):
+    """Human-readable name of an entity kind for tooltips/status text."""
     if kind == "npc":
         return "NPC"
     if kind == "location":
@@ -116,21 +145,30 @@ def kind_label(kind):
 
 
 class MentionHighlighter:
+    """Colors entity names appearing in the journal editor.
+
+    Uses QTextEdit.ExtraSelection, which overlays formatting without
+    modifying the underlying document text, so highlighting is purely visual.
+    """
+
     def __init__(self, edit, get_entities):
         self.edit = edit
-        self.get_entities = get_entities
-        self.rules = []
+        self.get_entities = get_entities  # callback returns the current entity lists
+        self.rules = []  # (compiled regex, color) pairs
 
     def refresh(self):
+        """(Re)build regex rules from the current entities."""
         self.rules = []
         for entity in self.get_entities():
             name = entity.get("name", "")
             if name:
+                # Word boundaries keep "Al" from matching inside "Altar".
                 self.rules.append(
                     (re.compile(r"\b" + re.escape(name) + r"\b"), entity.get("color", "#888"))
                 )
 
     def rehighlight(self):
+        """Re-scan the editor text and apply all matching highlights."""
         self.refresh()
         selections = []
         text = self.edit.toPlainText()
@@ -149,17 +187,27 @@ class MentionHighlighter:
 
 
 class EntityTab(QWidget):
-    def __init__(self, data, on_change, kind, extra_fields, list_label, form_title, entity_label):
+    """Generic master-detail editor for characters, NPCs and locations.
+
+    The subclasses differ only in which extra text fields they expose and
+    whether an image can be attached. Characters/NPCs use images for VTT
+    tokens; locations keep a simple color-filled token.
+    """
+
+    def __init__(self, data, on_change, kind, extra_fields, list_label, form_title, entity_label, enable_image=False):
         super().__init__()
         self.data = data
+        # Callback fired after every mutation so the main window can persist.
         self.on_change = on_change
-        self.kind = kind
-        self.extra_fields = extra_fields
+        self.kind = kind  # key into self.data, e.g. "characters"
+        self.extra_fields = extra_fields  # (attribute, label) pairs for extra form rows
         self.entity_label = entity_label
-        self.current_id = None
+        self.enable_image = enable_image
+        self.current_id = None  # id of the entity being edited; None means "new"
 
         root = QHBoxLayout(self)
 
+        # --- Left pane: list of existing entities -------------------------
         left = QVBoxLayout()
         self.entity_list = QListWidget()
         self.entity_list.currentItemChanged.connect(self._on_select)
@@ -170,15 +218,13 @@ class EntityTab(QWidget):
         left.addWidget(self.add_btn)
         root.addLayout(left, 1)
 
+        # --- Right pane: editable detail form -----------------------------
         form_box = QGroupBox(form_title)
         form = QFormLayout(form_box)
         self.name_edit = QLineEdit()
         self.extra_edits = {}
         self.desc_edit = QPlainTextEdit()
         self.desc_edit.setFixedHeight(140)
-        self.color_btn = QPushButton()
-        self.color_btn.setFixedWidth(70)
-        self.color_btn.clicked.connect(self._pick_color)
         self.color = QColor("#888888")
 
         form.addRow("Name", self.name_edit)
@@ -187,7 +233,21 @@ class EntityTab(QWidget):
             self.extra_edits[attr] = edit
             form.addRow(label, edit)
         form.addRow("Description", self.desc_edit)
-        form.addRow("Token Color", self.color_btn)
+        if self.enable_image:
+            # An attached image is only *committed* on Save (see _save_image),
+            # so a picked-then-abandoned image never writes to disk.
+            self.image_name = None  # stored basename of the committed image
+            self.pending_image = None  # absolute path picked but not yet saved
+            self.image_label = QLabel("No image")
+            self.image_btn = QPushButton("Choose Image...")
+            self.image_btn.clicked.connect(self._pick_image)
+            self.image_clear_btn = QPushButton("Clear")
+            self.image_clear_btn.clicked.connect(self._clear_image)
+            img_row = QHBoxLayout()
+            img_row.addWidget(self.image_label, 1)
+            img_row.addWidget(self.image_btn)
+            img_row.addWidget(self.image_clear_btn)
+            form.addRow("Token Image", img_row)
 
         btns = QHBoxLayout()
         self.save_btn = QPushButton(f"Save {entity_label}")
@@ -201,39 +261,51 @@ class EntityTab(QWidget):
         self.status = QLabel(f"Create a {entity_label.lower()} to get started.")
         form.addRow(self.status)
         root.addWidget(form_box, 2)
-        self._update_color_button()
 
     def _entities(self):
+        """Shortcut to this tab's entity list in the shared store."""
         return self.data[self.kind]
 
     def _list_text(self, entity):
+        """Format the list row: name plus the extra fields joined with ' / '."""
         extras = " / ".join(entity.get(attr) or "-" for attr, _ in self.extra_fields)
         return f"{entity['name']}  ({extras})"
 
     def refresh(self):
+        """Full refresh of both the list and the detail form."""
         self.refresh_list()
         self.refresh_form()
 
     def refresh_list(self):
+        """Rebuild the list widget, preserving the current selection if any."""
+        # Signals are blocked during the rebuild so clearing/re-populating the
+        # list doesn't fire a spurious selection-change on the form.
         self.entity_list.blockSignals(True)
         self.entity_list.clear()
         for entity in self._entities():
             item = QListWidgetItem(self._list_text(entity))
+            # The entity id rides along in UserRole for selection lookup.
             item.setData(Qt.ItemDataRole.UserRole, entity["id"])
             item.setForeground(QColor(entity.get("color", "#888")))
             self.entity_list.addItem(item)
         self.entity_list.blockSignals(False)
+        # Auto-select the first item only when nothing is currently selected
+        # (e.g. first launch), so an in-progress new-entity form isn't hijacked.
         if self.entity_list.count() > 0 and self.current_id is None:
             self.entity_list.setCurrentRow(0)
 
     def refresh_form(self):
+        """Populate the form from the selected entity, or reset for a new one."""
         if self.current_id is None:
             self.name_edit.clear()
             for edit in self.extra_edits.values():
                 edit.clear()
             self.desc_edit.clear()
             self.color = QColor("#888888")
-            self._update_color_button()
+            if self.enable_image:
+                self.image_name = None
+                self.pending_image = None
+                self._update_image_label()
             self.status.setText(f"Create a {self.entity_label.lower()} to get started.")
             return
         entity = self._find(self.current_id)
@@ -244,7 +316,10 @@ class EntityTab(QWidget):
             self.extra_edits[attr].setText(entity.get(attr, ""))
         self.desc_edit.setPlainText(entity.get("description", ""))
         self.color = QColor(entity.get("color", "#888888"))
-        self._update_color_button()
+        if self.enable_image:
+            self.image_name = entity.get("image") or None
+            self.pending_image = None  # loading a saved entity, nothing pending
+            self._update_image_label()
         self.status.setText(f"Editing {entity['name']}")
 
     def _find(self, entity_id):
@@ -254,6 +329,7 @@ class EntityTab(QWidget):
         return None
 
     def _on_select(self, current, _previous):
+        """Selection handler: switch the form to the newly selected entity."""
         if current is None:
             self.current_id = None
             return
@@ -261,36 +337,96 @@ class EntityTab(QWidget):
         self.refresh_form()
 
     def _on_new(self):
+        """Reset the form to blank to prepare for creating a new entity."""
         self.current_id = None
         self.entity_list.setCurrentItem(None)
         self.name_edit.clear()
         for edit in self.extra_edits.values():
             edit.clear()
         self.desc_edit.clear()
+        # Assign a palette color up front so the token has a sensible default.
         self.color = QColor(next_color(self._entities()))
-        self._update_color_button()
+        if self.enable_image:
+            self.image_name = None
+            self.pending_image = None
+            self._update_image_label()
         self.name_edit.setFocus()
         self.status.setText(f"New {self.entity_label.lower()} - fill in the fields and press Save.")
 
-    def _pick_color(self):
-        chosen = QColorDialog.getColor(self.color, self, "Choose token color")
-        if chosen.isValid():
-            self.color = chosen
-            self._update_color_button()
+    def _resolved_image(self):
+        """Return an absolute path to the current image, or None if unusable."""
+        path = self.pending_image or self.image_name
+        if not path:
+            return None
+        if self.pending_image:
+            return self.pending_image
+        path = os.path.join(TOKENS_DIR, path)
+        return path if os.path.exists(path) else None
 
-    def _update_color_button(self):
-        self.color_btn.setStyleSheet(
-            f"background-color: {self.color.name()}; border: 1px solid #333; border-radius: 4px;"
+    def _update_image_label(self):
+        """Show a small thumbnail of the current image, or 'No image'."""
+        path = self._resolved_image()
+        pix = QPixmap(path) if path else QPixmap()
+        if pix.isNull():
+            self.image_label.setText("No image")
+            self.image_label.setPixmap(QPixmap())
+            return
+        self.image_label.setText("")
+        self.image_label.setPixmap(
+            pix.scaled(
+                40, 40,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
         )
 
+    def _pick_image(self):
+        """Open a file dialog and stage the chosen image (saved on Save)."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose token image", "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif)",
+        )
+        if not path:
+            return
+        self.pending_image = path
+        self._update_image_label()
+
+    def _clear_image(self):
+        """Discard any staged image and forget the stored one (on save)."""
+        self.pending_image = None
+        self.image_name = None
+        self._update_image_label()
+
+    def _save_image(self, entity):
+        """Copy a staged image into TOKENS_DIR and record it on the entity.
+
+        Images are stored under a random basename so two entities can use
+        files with the same name, and so deleting a source file is safe.
+        """
+        if self.pending_image:
+            ext = os.path.splitext(self.pending_image)[1]
+            dest = os.path.join(TOKENS_DIR, f"{uuid.uuid4().hex[:8]}{ext}")
+            try:
+                shutil.copy(self.pending_image, dest)
+            except Exception:
+                # A failed copy shouldn't abort the whole save.
+                return
+            entity["image"] = os.path.basename(dest)
+            self.image_name = os.path.basename(dest)
+            self.pending_image = None
+        elif not self.image_name:
+            # Image was cleared (or never set) - drop the stored reference.
+            entity.pop("image", None)
+
     def _on_save(self):
+        """Create or update the entity from the current form values."""
         name = self.name_edit.text().strip()
         if not name:
             QMessageBox.warning(self, APP_NAME, f"A {self.entity_label.lower()} needs a name.")
             return
         if self.current_id is None:
             entity = {
-                "id": uuid.uuid4().hex[:12],
+                "id": uuid.uuid4().hex[:12],  # short, collision-free id
                 "name": name,
                 "description": self.desc_edit.toPlainText().strip(),
                 "color": self.color.name(),
@@ -306,18 +442,23 @@ class EntityTab(QWidget):
             entity["color"] = self.color.name()
             for attr, _ in self.extra_fields:
                 entity[attr] = self.extra_edits[attr].text().strip()
+        if self.enable_image:
+            self._save_image(entity)
         self.refresh_list()
         self.refresh_form()
-        self.on_change()
+        self.on_change()  # persist to disk
         self.status.setText(f"Saved {name}.")
 
     def _on_delete(self):
+        """Remove the selected entity after confirmation."""
         if self.current_id is None:
             return
         entity = self._find(self.current_id)
         answer = QMessageBox.question(
             self,
             APP_NAME,
+            # Notes/tokens reference entities by name text, so they are kept
+            # even though the entity itself disappears.
             f"Delete {entity['name']}? Existing notes and tokens keep their text.",
         )
         if answer != QMessageBox.StandardButton.Yes:
@@ -329,6 +470,8 @@ class EntityTab(QWidget):
 
 
 class CharactersTab(EntityTab):
+    """Entity editor for player characters (with race/class fields)."""
+
     def __init__(self, data, on_change):
         super().__init__(
             data,
@@ -338,10 +481,13 @@ class CharactersTab(EntityTab):
             list_label="Characters",
             form_title="Character Details",
             entity_label="Character",
+            enable_image=True,
         )
 
 
 class NPCsTab(EntityTab):
+    """Entity editor for NPCs (with a role field)."""
+
     def __init__(self, data, on_change):
         super().__init__(
             data,
@@ -351,10 +497,13 @@ class NPCsTab(EntityTab):
             list_label="NPCs",
             form_title="NPC Details",
             entity_label="NPC",
+            enable_image=True,
         )
 
 
 class LocationsTab(EntityTab):
+    """Entity editor for locations (with a type field)."""
+
     def __init__(self, data, on_change):
         super().__init__(
             data,
@@ -368,6 +517,8 @@ class LocationsTab(EntityTab):
 
 
 class MonsterTab(QWidget):
+    """Statblock editor for monsters: name, CR, link, AC/HP/speed/abilities."""
+
     def __init__(self, data, on_change):
         super().__init__()
         self.data = data
@@ -376,6 +527,7 @@ class MonsterTab(QWidget):
 
         root = QHBoxLayout(self)
 
+        # --- Left pane: monster list ---------------------------------------
         left = QVBoxLayout()
         self.monster_list = QListWidget()
         self.monster_list.currentItemChanged.connect(self._on_select)
@@ -389,6 +541,7 @@ class MonsterTab(QWidget):
         left.addWidget(self.delete_btn)
         root.addLayout(left, 1)
 
+        # --- Right pane: statblock form -------------------------------------
         form_box = QGroupBox("Monster Statblock")
         form = QFormLayout(form_box)
         self.name_edit = QLineEdit()
@@ -422,10 +575,12 @@ class MonsterTab(QWidget):
         root.addWidget(form_box, 2)
 
     def refresh(self):
+        """Full refresh of the monster list and statblock form."""
         self.refresh_list()
         self.refresh_form()
 
     def refresh_list(self):
+        """Rebuild the monster list, showing CR in the row label when set."""
         self.monster_list.blockSignals(True)
         self.monster_list.clear()
         for monster in self.data["monsters"]:
@@ -439,6 +594,7 @@ class MonsterTab(QWidget):
             self.monster_list.setCurrentRow(0)
 
     def refresh_form(self):
+        """Fill the form from the selected monster, or reset for a new one."""
         if self.current_id is None:
             self._clear_form()
             self.status.setText("Create a monster to get started.")
@@ -484,6 +640,7 @@ class MonsterTab(QWidget):
         self.status.setText("New monster - fill in the fields and press Save Monster.")
 
     def _on_save(self):
+        """Create or update a monster from the form values."""
         name = self.name_edit.text().strip()
         if not name:
             QMessageBox.warning(self, APP_NAME, "A monster needs a name.")
@@ -528,30 +685,80 @@ class MonsterTab(QWidget):
 
 
 class TokenItem(QGraphicsRectItem):
-    def __init__(self, entity_id, kind, name, color, diameter=46):
+    """A movable token on the VTT scene.
+
+    Renders either the entity's image (characters/NPCs) clipped into the
+    token's shape, or a plain colored circle/rect with an abbreviated label.
+    The bounding rect is centered on the origin so setPos() places the
+    token's center exactly where the user clicked.
+    """
+
+    def __init__(self, entity_id, kind, name, color, diameter=46, image=None):
         super().__init__(-diameter / 2, -diameter / 2, diameter, diameter)
         self.entity_id = entity_id
         self.kind = kind
         self.name = name
         self.diameter = diameter
+        self.image = image
         self._label = short_label(name)
+        # Load the pixmap once at construction rather than every paint().
+        self._pixmap = None
+        if image:
+            path = image if os.path.isabs(image) else os.path.join(TOKENS_DIR, image)
+            if os.path.exists(path):
+                pix = QPixmap(path)
+                if not pix.isNull():
+                    self._pixmap = pix
         self.setBrush(QBrush(QColor(color)))
         pen = QPen(QColor("#141414"), 2)
+        # NPCs use a dashed outline to visually stand apart from characters.
         if kind == "npc":
             pen.setStyle(Qt.PenStyle.DashLine)
         self.setPen(pen)
         self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable, True)
-        self.setZValue(1)
+        self.setZValue(1)  # tokens stay above the background map
         self.setToolTip(
             f"{kind_label(kind)}: {name}\n(drag to move, right-click to remove)"
         )
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(-self.diameter / 2, -self.diameter / 2, self.diameter, self.diameter)
+        # Locations are drawn as squares; everything else as circles.
+        if self.kind == "location":
+            clip = QPainterPath()
+            clip.addRect(rect)
+        else:
+            clip = QPainterPath()
+            clip.addEllipse(rect)
+        if self._pixmap is not None:
+            # Image mode: clip to the shape, draw the image centered with
+            # aspect preserved, then a plain border on top.
+            painter.save()
+            painter.setClipPath(clip)
+            pix = self._pixmap
+            scaled = pix.scaled(
+                rect.width(), rect.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.drawPixmap(
+                int(rect.center().x() - scaled.width() / 2),
+                int(rect.center().y() - scaled.height() / 2),
+                scaled,
+            )
+            painter.restore()
+            painter.setPen(self.pen())
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            if self.kind == "location":
+                painter.drawRect(rect)
+            else:
+                painter.drawEllipse(rect)
+            return
+        # Fallback mode: colored shape with a short centered label.
         painter.setBrush(self.brush())
         painter.setPen(self.pen())
-        rect = QRectF(-self.diameter / 2, -self.diameter / 2, self.diameter, self.diameter)
         if self.kind == "location":
             painter.drawRect(rect)
         else:
@@ -563,11 +770,13 @@ class TokenItem(QGraphicsRectItem):
         painter.setFont(font)
         fm = QFontMetricsF(font)
         label = self._label
+        # Truncate to two chars if the label would overflow the token.
         if fm.horizontalAdvance(label) > self.diameter * 0.9:
             label = label[:2]
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def to_dict(self):
+        """Serialize the token's current state for scene persistence."""
         return {
             "entity_id": self.entity_id,
             "kind": self.kind,
@@ -576,10 +785,13 @@ class TokenItem(QGraphicsRectItem):
             "x": self.pos().x(),
             "y": self.pos().y(),
             "diameter": self.diameter,
+            "image": self.image,
         }
 
 
 class MapView(QGraphicsView):
+    """View over the VTT scene, handling click-to-place and wheel zoom."""
+
     def __init__(self, map_tab):
         super().__init__()
         self.map_tab = map_tab
@@ -588,11 +800,13 @@ class MapView(QGraphicsView):
         self.setScene(self.map_tab.scene)
 
     def mousePressEvent(self, event):
+        # Right-click on a token removes it.
         if event.button() == Qt.MouseButton.RightButton:
             item = self.itemAt(event.position().toPoint())
             if isinstance(item, TokenItem):
                 self.map_tab.remove_token(item)
             return
+        # When a placement is pending, the next left-click drops the token.
         if self.map_tab.pending_entity is not None:
             scene_pos = self.mapToScene(event.position().toPoint())
             self.map_tab.place_token(self.map_tab.pending_entity, scene_pos)
@@ -604,22 +818,26 @@ class MapView(QGraphicsView):
         super().mousePressEvent(event)
 
     def wheelEvent(self, event):
+        """Zoom in/out around the view center via the scroll wheel."""
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
         self.scale(factor, factor)
 
 
 class MapsTab(QWidget):
+    """VTT tab: manage scenes, load map images, and place/drag tokens."""
+
     def __init__(self, data, on_change):
         super().__init__()
         self.data = data
         self.on_change = on_change
         self.current_scene_id = None
-        self.pending_entity = None
+        self.pending_entity = None  # set while waiting for a click to place a token
         self.scene = QGraphicsScene(self)
         self.background_item = None
 
         root = QHBoxLayout(self)
 
+        # --- Left pane: scene management ------------------------------------
         left = QVBoxLayout()
         self.scene_list = QListWidget()
         self.scene_list.currentItemChanged.connect(self._on_scene_select)
@@ -636,6 +854,7 @@ class MapsTab(QWidget):
         left.addWidget(self.delete_scene_btn)
         root.addLayout(left, 1)
 
+        # --- Right pane: map canvas and toolbar -----------------------------
         right = QVBoxLayout()
         toolbar = QHBoxLayout()
         self.load_map_btn = QPushButton("Load Map Image...")
@@ -670,15 +889,19 @@ class MapsTab(QWidget):
         root.addLayout(right, 4)
 
     def refresh(self):
+        """Refresh the scene list, entity menu, and the current scene view."""
         self.refresh_scene_list()
         self.refresh_entities()
         self.refresh_scene_view()
 
     def refresh_entities(self):
+        """Populate the token dropdown with all characters and NPCs."""
         current = self.entity_menu.currentData()
         self.entity_menu.blockSignals(True)
         self.entity_menu.clear()
         for ch in self.data["characters"]:
+            # The full entity dict rides along as item data so the pending
+            # placement has everything it needs (id, name, color, image).
             self.entity_menu.addItem(
                 f"{ch['name']} ({ch.get('race', '-')} / {ch.get('class', '-')})",
                 dict(ch, kind="character"),
@@ -688,6 +911,7 @@ class MapsTab(QWidget):
                 f"NPC: {npc['name']} ({npc.get('role', '-')})",
                 dict(npc, kind="npc"),
             )
+        # Restore the previous selection by value if it still exists.
         if current is not None:
             index = self.entity_menu.findData(current)
             if index >= 0:
@@ -695,6 +919,7 @@ class MapsTab(QWidget):
         self.entity_menu.blockSignals(False)
 
     def refresh_scene_list(self):
+        """Rebuild the scene list, restoring the current selection."""
         self.scene_list.blockSignals(True)
         self.scene_list.clear()
         for scene in self.data["scenes"]:
@@ -720,14 +945,17 @@ class MapsTab(QWidget):
         return None
 
     def refresh_scene_view(self):
+        """Rebuild the QGraphicsScene for the current scene (map + tokens)."""
         self.scene.clear()
         self.background_item = None
         scene = self._find_scene(self.current_scene_id) if self.current_scene_id else None
         if scene is None:
+            # Placeholder canvas so the view is never empty.
             self.scene.setSceneRect(0, 0, 800, 600)
             self.scene.addRect(0, 0, 800, 600, QPen(QColor("#333")), QBrush(QColor("#1f1f1f")))
             self.status.setText("No scene selected. Create or pick a scene, then load a map image.")
             return
+        # Map images are stored by basename and resolved against MAPS_DIR.
         map_path = scene.get("map_path")
         if map_path and not os.path.isabs(map_path):
             map_path = os.path.join(MAPS_DIR, map_path)
@@ -735,8 +963,10 @@ class MapsTab(QWidget):
             pixmap = QPixmap(map_path)
             if not pixmap.isNull():
                 self.background_item = self.scene.addPixmap(pixmap)
+                # Scene bounds follow the map so Fit and zoom behave predictably.
                 self.scene.setSceneRect(QRectF(pixmap.rect()))
         else:
+            # No map loaded: default gray canvas.
             self.scene.setSceneRect(0, 0, 1000, 700)
             self.scene.addRect(0, 0, 1000, 700, QPen(QColor("#333")), QBrush(QColor("#1f1f1f")))
         for token in scene.get("tokens", []):
@@ -744,12 +974,14 @@ class MapsTab(QWidget):
         self.status.setText(f"Scene '{scene.get('name')}' - drag tokens, right-click to remove.")
 
     def _restore_token(self, token):
+        """Recreate a TokenItem from a saved scene dict."""
         item = TokenItem(
-            token.get("entity_id", token.get("char_id")),
+            token.get("entity_id", token.get("char_id")),  # char_id is the legacy key
             token.get("kind", "character"),
             token.get("name", "?"),
             token.get("color", "#888"),
             token.get("diameter", 46),
+            image=token.get("image"),
         )
         item.setPos(token.get("x", 0), token.get("y", 0))
         self.scene.addItem(item)
@@ -797,6 +1029,7 @@ class MapsTab(QWidget):
         self.on_change()
 
     def _load_map(self):
+        """Pick a map image, copy it into MAPS_DIR, and attach it to the scene."""
         if self.current_scene_id is None:
             QMessageBox.information(self, APP_NAME, "Create a scene first, then load a map image.")
             return
@@ -806,6 +1039,7 @@ class MapsTab(QWidget):
         )
         if not path:
             return
+        # Random basename avoids collisions between identically named files.
         dest = os.path.join(MAPS_DIR, f"{uuid.uuid4().hex[:8]}{os.path.splitext(path)[1]}")
         shutil.copy(path, dest)
         scene = self._find_scene(self.current_scene_id)
@@ -815,6 +1049,7 @@ class MapsTab(QWidget):
         self.on_change()
 
     def _on_add_token(self):
+        """Toggle 'place next click' mode for the entity in the dropdown."""
         if self.current_scene_id is None:
             QMessageBox.information(self, APP_NAME, "Create a scene first.")
             return
@@ -826,11 +1061,19 @@ class MapsTab(QWidget):
             self.pending_entity = entity
             self.status.setText(f"Place '{entity['name']}' by clicking the map. Right-click to cancel.")
         else:
+            # Clicking the button again toggles placement off.
             self.pending_entity = None
             self.status.setText("Placement cancelled.")
 
     def place_token(self, entity, scene_pos):
-        item = TokenItem(entity["id"], entity.get("kind", "character"), entity["name"], entity["color"])
+        """Drop a new token for the given entity at the scene position."""
+        item = TokenItem(
+            entity["id"],
+            entity.get("kind", "character"),
+            entity["name"],
+            entity["color"],
+            image=entity.get("image"),
+        )
         item.setPos(scene_pos)
         self.scene.addItem(item)
         self.status.setText(f"Placed {entity['name']}. Drag to reposition, right-click to remove.")
@@ -840,9 +1083,11 @@ class MapsTab(QWidget):
         self.status.setText(f"Removed {item.name}.")
 
     def _fit_view(self):
+        """Zoom to fit the whole scene in the viewport."""
         self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def _on_save_scene(self):
+        """Persist the current token positions into the scene record."""
         if self.current_scene_id is None:
             return
         scene = self._find_scene(self.current_scene_id)
@@ -856,6 +1101,8 @@ class MapsTab(QWidget):
 
 
 class NotesTab(QWidget):
+    """Journal: dated notes with dialogue/@mention insertion and highlighting."""
+
     def __init__(self, data, on_change):
         super().__init__()
         self.data = data
@@ -864,6 +1111,7 @@ class NotesTab(QWidget):
 
         root = QHBoxLayout(self)
 
+        # --- Left pane: list of notes ----------------------------------------
         left = QVBoxLayout()
         self.note_list = QListWidget()
         self.note_list.currentItemChanged.connect(self._on_note_select)
@@ -877,7 +1125,9 @@ class NotesTab(QWidget):
         left.addWidget(self.delete_note_btn)
         root.addLayout(left, 1)
 
+        # --- Right pane: editor ------------------------------------------------
         right = QVBoxLayout()
+        # Scrollable strip of buttons for inserting dialogue/@mentions.
         self.char_bar = QWidget()
         self.char_bar_layout = QVBoxLayout(self.char_bar)
         self.char_bar_layout.setContentsMargins(0, 0, 0, 0)
@@ -917,14 +1167,18 @@ class NotesTab(QWidget):
             self.editor,
             lambda: self.data["characters"] + self.data["npcs"] + self.data["locations"],
         )
+        # Re-highlight on every keystroke to keep mentions current.
         self.editor.textChanged.connect(self.highlighter.rehighlight)
 
     def refresh(self):
+        """Refresh the entity button bar, note list, and highlighting."""
         self.refresh_entity_bar()
         self.refresh_note_list()
         self.highlighter.rehighlight()
 
     def refresh_entity_bar(self):
+        """Rebuild the dialogue/@mention buttons from the current entities."""
+        # Tear down previous widgets explicitly or they leak as orphaned children.
         while self.char_bar_layout.count():
             item = self.char_bar_layout.takeAt(0)
             widget = item.widget()
@@ -941,14 +1195,17 @@ class NotesTab(QWidget):
             self.char_bar_layout.addWidget(empty)
 
     def _add_entity_rows(self, entities, prefix=""):
+        """Add one row of buttons per entity for quick insertion."""
         for entity in entities:
             row = QHBoxLayout()
             color = QColor(entity.get("color", "#888"))
             name_label = QLabel(prefix + entity["name"])
             name_label.setStyleSheet(f"color: {color.name()}; font-weight: bold;")
             dialogue_btn = QPushButton(f'{entity["name"]}: "...')
-            dialogue_btn.clicked.connect(lambda _=False, n=entity["name"]: self._insert_dialogue(n))
             mention_btn = QPushButton("@mention")
+            # Lambdas capture n via a default arg so the entity name is bound
+            # at click time rather than whichever name the loop ended on.
+            dialogue_btn.clicked.connect(lambda _=False, n=entity["name"]: self._insert_dialogue(n))
             mention_btn.clicked.connect(lambda _=False, n=entity["name"]: self._insert_mention(n))
             row.addWidget(name_label)
             row.addWidget(dialogue_btn)
@@ -959,6 +1216,7 @@ class NotesTab(QWidget):
             self.char_bar_layout.addWidget(container)
 
     def refresh_note_list(self):
+        """Rebuild the note list, restoring the current selection."""
         self.note_list.blockSignals(True)
         self.note_list.clear()
         for note in self.data["notes"]:
@@ -986,6 +1244,7 @@ class NotesTab(QWidget):
         return None
 
     def _insert_dialogue(self, name):
+        """Insert a newline, `Name: "`, and place the cursor between the quotes."""
         text_cursor = self.editor.textCursor()
         text_cursor.insertText(f"\n{name}: \"")
         inner = self.editor.textCursor().position()
@@ -1002,6 +1261,7 @@ class NotesTab(QWidget):
         self.highlighter.rehighlight()
 
     def _on_note_select(self, current, _previous):
+        """Load the selected note's title and text into the editor."""
         if current is None:
             self.current_note_id = None
             self.editor.clear()
@@ -1025,10 +1285,13 @@ class NotesTab(QWidget):
         self.editor.clear()
 
     def _on_save_note(self):
+        """Create or update a note, recording which entities its text mentions."""
         text = self.editor.toPlainText().strip()
         if not text and not self.title_edit.text().strip():
             self.status.setText("Nothing to save.")
             return
+        # A plain substring match (no word boundaries) keeps this lenient:
+        # even partial or pluralized mentions count as references.
         char_refs = [
             ch["id"] for ch in self.data["characters"] if ch["name"] and ch["name"] in text
         ]
@@ -1050,7 +1313,7 @@ class NotesTab(QWidget):
                 "npc_ids": npc_refs,
                 "loc_ids": loc_refs,
             }
-            self.data["notes"].insert(0, note)
+            self.data["notes"].insert(0, note)  # newest note first
             self.current_note_id = note["id"]
         else:
             note = self._find_note(self.current_note_id)
@@ -1082,12 +1345,15 @@ class NotesTab(QWidget):
 
 
 class MainWindow(QMainWindow):
+    """Top-level window hosting all the tabs on a shared data store."""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(1200, 780)
         self.data = load_data()
 
+        # Each tab mutates the same dict; on_change persists and refreshes all.
         self.tabs = QTabWidget()
         self.characters_tab = CharactersTab(self.data, self.save_and_refresh)
         self.npcs_tab = NPCsTab(self.data, self.save_and_refresh)
@@ -1110,6 +1376,7 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def save_and_refresh(self):
+        """Persist changes and refresh every tab in one shot."""
         save_data(self.data)
         self.refresh()
 
@@ -1122,6 +1389,7 @@ class MainWindow(QMainWindow):
         self.maps_tab.refresh()
 
     def _on_tab_changed(self, index):
+        """Re-sync the journal/VTT when the user switches to them."""
         if index == 4:
             self.notes_tab.refresh()
         elif index == 5:
