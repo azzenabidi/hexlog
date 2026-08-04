@@ -190,7 +190,9 @@ class TokenItem(QGraphicsRectItem):
             pix = self._pixmap
             scaled = pix.scaled(
                 rect.width(), rect.height(),
-                Qt.AspectRatioMode.KeepAspectRatio,
+                # Cover-crop: scale up until the whole token is filled, then
+                # clip the overflow with the shape so there is no letterboxing.
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
             painter.drawPixmap(
