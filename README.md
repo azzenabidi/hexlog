@@ -36,7 +36,7 @@ For packaging a distributable app with PyInstaller:
 ./package.sh
 ```
 
-This builds a bundled app under `dist/hexlog/`.
+This builds a bundled app under `dist/hexlog/`. The packaging script expects a Python runtime that exposes a shared library, which is required by PyInstaller.
 
 ## Data storage
 
