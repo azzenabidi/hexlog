@@ -161,9 +161,12 @@ class EntityTab(QWidget):
             item.setForeground(QColor(entity.get("color", C.DEFAULT_ENTITY_COLOR)))
             self.entity_list.addItem(item)
         if self.entity_list.count() == 0:
-            hint = QListWidgetItem(
-                f"No {self.entity_label.lower()}s yet - click New {self.entity_label}."
-            )
+            if query:
+                hint = QListWidgetItem("No matches for the current filter.")
+            else:
+                hint = QListWidgetItem(
+                    f"No {self.entity_label.lower()}s yet - click New {self.entity_label}."
+                )
             hint.setFlags(Qt.ItemFlag.NoItemFlags)  # purely decorative
             hint.setForeground(QColor(C.HINT_TEXT_COLOR))
             self.entity_list.addItem(hint)
@@ -208,6 +211,8 @@ class EntityTab(QWidget):
                 return
             entity = self._find(self.current_id)
             if not entity:
+                self.current_id = None
+                self.refresh_form()
                 return
             self.name_edit.setText(entity.get("name", ""))
             for attr, _ in self.extra_fields:
@@ -384,11 +389,12 @@ class EntityTab(QWidget):
         self.on_change()
 
     def _show_context_menu(self, pos):
-        """Right-click menu on the list: new, and delete for a real row."""
+        """Right-click menu on the list, targeting the row under the cursor."""
         menu = QMenu(self)
         menu.addAction(f"New {self.entity_label}", self._on_new)
         item = self.entity_list.itemAt(pos)
         if item is not None and item.flags() & Qt.ItemFlag.ItemIsSelectable:
+            self.entity_list.setCurrentItem(item)
             menu.addAction("Delete", self._on_delete)
         menu.exec(self.entity_list.mapToGlobal(pos))
 

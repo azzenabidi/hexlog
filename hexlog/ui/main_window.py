@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.maps_tab, "VTT")
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
+        self.maps_tab.set_theme(self.theme_name)
 
         self.statusBar().showMessage(
             f"Hexlog - characters, NPCs, locations, monsters, journal, VTT tokens. "
@@ -115,6 +116,7 @@ class MainWindow(QMainWindow):
         stylesheet = get_theme_stylesheet(self.theme_name)
         self.setStyleSheet(stylesheet)
         self.theme_action.setText("☀ Light" if self.theme_name == "dark" else "🌙 Dark")
+        self.maps_tab.set_theme(self.theme_name)
 
     def _on_changed(self, source):
         """Schedule a save; the tab that reported the change gets refreshed."""

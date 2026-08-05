@@ -221,7 +221,10 @@ class NotesTab(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, note["id"])
             self.note_list.addItem(item)
         if self.note_list.count() == 0:
-            hint = QListWidgetItem("No notes yet - click New Note.")
+            if query:
+                hint = QListWidgetItem("No matches for the current filter.")
+            else:
+                hint = QListWidgetItem("No notes yet - click New Note.")
             hint.setFlags(Qt.ItemFlag.NoItemFlags)
             hint.setForeground(QColor(C.HINT_TEXT_COLOR))
             self.note_list.addItem(hint)
@@ -362,9 +365,11 @@ class NotesTab(QWidget):
         self.on_change()
 
     def _show_context_menu(self, pos):
+        """Right-click menu on the note list, targeting the row under the cursor."""
         menu = QMenu(self)
         menu.addAction("New Note", self._on_new_note)
         item = self.note_list.itemAt(pos)
         if item is not None and item.flags() & Qt.ItemFlag.ItemIsSelectable:
+            self.note_list.setCurrentItem(item)
             menu.addAction("Delete", self._on_delete_note)
         menu.exec(self.note_list.mapToGlobal(pos))
