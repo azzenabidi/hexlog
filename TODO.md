@@ -90,3 +90,68 @@ the saved one. Fix: show `next_color()` in the blank form.
 ## 10. Revisit full-file JSON rewrite
 Whole store rewritten on each 600 ms autosave. Fine at current scale; revisit
 only if the journal grows to multi-MB.
+
+---
+
+# Release & versioning
+
+Current process: bump `__version__` in `hexlog/__init__.py` -> commit "Bump
+version to X.Y.Z" -> annotated tag `vX.Y.Z` -> build AppImage via `./package.sh`
+-> upload assets to a GitHub release manually.
+
+## Versioning policy (SemVer, pre-1.0)
+- **PATCH (0.4.1)** — bug fixes, small polish, performance fixes.
+- **MINOR (0.5.0)** — new features and breaking changes (oracle, dice roller, etc.).
+- **MAJOR (1.0)** — first stable release; breaking changes bump MAJOR after 1.0.
+- **Pre-releases** — `0.5.0-rc1` / `0.5.0-beta.1`, marked "pre-release" on GitHub
+  so `/releases/latest` stays stable.
+
+Two hard rules:
+1. Version lives in exactly one place (`hexlog/__init__.py`); pyproject.toml and
+   package.sh already read it from there.
+2. Tag always equals `__version__` (e.g. tag `v0.5.0` on the bump commit).
+
+## Planned automation
+- **GitHub Actions release workflow**: trigger on tag push `v*`, build the
+  AppImage on CI, `gh release create v0.5.0 <appimage> --generate-notes`.
+  Replaces manual package.sh + upload, and guarantees the binary matches the tag.
+- **Conventional Commits** (`feat:`, `fix:`, `chore:`) so notes can be generated
+  from `git log`.
+- **Optional later**: `setuptools-scm` to derive `__version__` from tags and drop
+  the manual bump commit.
+
+---
+
+# Recommended order — what to tackle first
+
+Ties all three sections together. Do the phases in order; anything "deferred"
+is low-value until a specific trigger hits.
+
+## Phase 0 — Versioning policy (5 min, no code)
+Adopt the SemVer rules + tag rule above. Document in the repo (this file).
+
+## Phase 1 — Data-safety and correctness quick wins (one session)
+Small, high-value, protect an existing campaign:
+1. Preserve corrupt data files (code review #1)
+2. Handle save failures gracefully (code review #4)
+3. PlainText on confirm dialogs (code review #5)
+4. Verify dialogue insertion caret (code review #8)
+5. Cosmetic color drift (code review #9)
+
+## Phase 2 — Performance for everyday solo play
+6. Debounce journal highlighting + reference scan (code review #2)
+7. Cache VTT pixmaps (code review #3)
+
+## Phase 3 — Release automation
+8. GitHub Actions release workflow (versioning section) — then release 0.5.0.
+
+## Phase 4 — Solo-play features (the reason the app exists)
+9. Oracle / Yes-No dialog (solo feature #1)
+10. Dice roller that logs to the journal (solo feature #2)
+11. Then work down the remaining solo features (combat tracker, clocks, etc.).
+
+## Deferred (only when triggered)
+- Validate images on import (#6) — when an import bug actually bites.
+- Prune orphaned files (#7) — when storage growth is felt.
+- Revisit full-file JSON rewrite (#10) — when the journal approaches multi-MB.
+- setuptools-scm (#3 under versioning) — when manual bumps feel like friction.
