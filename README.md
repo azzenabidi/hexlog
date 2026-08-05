@@ -12,7 +12,7 @@ A solo RPG companion for D&D-style play — manage characters, NPCs, locations, 
 - **Locations** — name, type, and description; easily referenced in the journal.
 - **Monsters** — statblock reference: name, CR, an optional link, and written details (AC, HP, speed, abilities, traits/actions).
 - **Journal** — session notes with dialogue and `@mention` insertion; character/NPC/location names are highlighted inline and references are tracked per note.
-- **VTT** — load a battle/area map image, drop character and NPC tokens on it, drag them around. Token positions autosave.
+- **VTT** — organize maps into named scenes, load a battle/area map image, and drop character and NPC tokens on it. Drag to reposition or pull the corner handle to resize; token positions and sizes autosave. The canvas follows the app's light/dark theme.
 - **Theme toggle** — switch between dark and light themes from the toolbar at runtime.
 
 ## Requirements
@@ -61,8 +61,9 @@ releases (which lived in `~/.hexlog/`) is moved in automatically.
 ## Usage notes
 
 - Everything autosaves as you type or drag - there are no Save buttons. `Ctrl+N` starts a new record; right-click a list for New/Delete (or press `Delete` while a list is focused).
-- On the VTT tab: click a character or NPC in the dropdown, press **Add Token To Map**, then click the map to place it. Positions are saved automatically.
-- Right-click a token to remove it; drag to reposition.
+- On the VTT tab: create a scene, pick a character or NPC in the dropdown, press **Add Token To Map**, then click the map to place it. Right-click cancels a pending placement.
+- Drag a token to reposition, or drag its corner handle to resize; both autosave. Right-click a token to remove it.
+- Right-click the scene list for New/Rename/Delete (or press `Delete` while it is focused).
 - `+` / `-` zoom, **Fit** to fit the map in the view.
 
 ## License
