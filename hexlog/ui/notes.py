@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTextEdit,
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import constants as C
+from hexlog.ui.dialogs import confirm
 
 
 def mention_pattern(name):
@@ -349,8 +349,7 @@ class NotesTab(QWidget):
     def _on_delete_note(self):
         if self.current_note_id is None:
             return
-        answer = QMessageBox.question(self, C.APP_NAME, "Delete this note?")
-        if answer != QMessageBox.StandardButton.Yes:
+        if not confirm(self, C.APP_NAME, "Delete this note?"):
             return
         self.store.remove(C.NOTES, self.current_note_id)
         self.current_note_id = None

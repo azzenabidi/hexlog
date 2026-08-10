@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import constants as C
+from hexlog.ui.dialogs import confirm
 from hexlog.ui.theme import DARK_THEME, THEMES
 
 
@@ -566,8 +567,7 @@ class MapsTab(QWidget):
         if self.current_scene_id is None:
             return
         scene = self._find_scene(self.current_scene_id)
-        answer = QMessageBox.question(self, C.APP_NAME, f"Delete scene '{scene['name']}'?")
-        if answer != QMessageBox.StandardButton.Yes:
+        if not confirm(self, C.APP_NAME, f"Delete scene '{scene['name']}'?"):
             return
         self.store.remove(C.SCENES, self.current_scene_id)
         self.current_scene_id = None

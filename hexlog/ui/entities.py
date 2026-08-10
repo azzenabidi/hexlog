@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from hexlog import constants as C
 from hexlog.storage import next_color
+from hexlog.ui.dialogs import confirm
 from hexlog.validation import validate_name
 
 
@@ -374,14 +375,13 @@ class EntityTab(QWidget):
         if self.current_id is None:
             return
         entity = self._find(self.current_id)
-        answer = QMessageBox.question(
+        if not confirm(
             self,
             C.APP_NAME,
             # Notes/tokens reference entities by name text, so they are kept
             # even though the entity itself disappears.
             f"Delete {entity.get('name') or '(unnamed)'}? Existing notes and tokens keep their text.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        ):
             return
         self.store.remove(self.kind, self.current_id)
         self.current_id = None
