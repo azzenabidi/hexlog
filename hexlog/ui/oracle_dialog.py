@@ -1,4 +1,4 @@
-"""Oracle dialog: ask the yes/no oracle and log answers to the journal.
+"""Oracle dialog: ask the Shadowdark SoloDark oracle and log to the journal.
 
 The dialog is thin glue over the pure engine in hexlog.oracle; it owns
 the randomness and hands the formatted result to a caller-supplied
@@ -16,11 +16,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
 )
 
-from hexlog.oracle import ODDS_LABELS, resolve
+from hexlog.oracle import ODDS_LABELS, odds_kind, resolve, roll_check
 
 
 def format_answer(answer):
@@ -29,13 +28,13 @@ def format_answer(answer):
         f"Q: {answer.question}",
         f"Odds {answer.odds} - rolled {answer.roll}: {answer.answer}",
     ]
-    if answer.event:
-        lines.append(f"Random event: {answer.event}")
+    if answer.twist:
+        lines.append(f"Twist: {answer.twist}")
     return "\n".join(lines)
 
 
 class OracleDialog(QDialog):
-    """Ask a fate question, roll the oracle, and show any twist that fires."""
+    """Ask a fate question, roll the oracle check, and show any twist."""
 
     def __init__(self, parent=None, insert_text=None):
         super().__init__(parent)
@@ -51,14 +50,14 @@ class OracleDialog(QDialog):
         self.question_edit.returnPressed.connect(self._ask)
         self.odds_combo = QComboBox()
         self.odds_combo.addItems(ODDS_LABELS)
-        self.odds_combo.setCurrentText("50/50")
-        self.chaos_spin = QSpinBox()
-        self.chaos_spin.setRange(0, 9)
-        self.chaos_spin.setValue(5)
-        self.chaos_spin.setToolTip("A chaos roll at or below this fires a random event.")
+        self.odds_combo.setCurrentText("Even Chance")
+        self.odds_combo.setToolTip(
+            "Unlikely or Impossible: roll with disadvantage (keep lowest).\n"
+            "Even Chance: roll a single d20.\n"
+            "Likely or Certain: roll with advantage (keep highest)."
+        )
         form.addRow("Question", self.question_edit)
         form.addRow("Odds", self.odds_combo)
-        form.addRow("Chaos factor", self.chaos_spin)
         root.addLayout(form)
 
         self.result_label = QLabel("Ask a question to hear the oracle.")
@@ -81,17 +80,13 @@ class OracleDialog(QDialog):
         root.addLayout(buttons)
 
     def _ask(self):
-        """Roll the oracle and show the verdict plus any random event."""
+        """Roll the oracle check (with the odds' advantage/disadvantage)
+        and show the verdict plus any twist that fires on a 10."""
         question = self.question_edit.text().strip() or "(unasked)"
-        answer = resolve(
-            question,
-            self.odds_combo.currentText(),
-            random.randint(1, 100),
-            chaos_roll=random.randint(1, 100),
-            chaos_factor=self.chaos_spin.value(),
-            focus_roll=random.randint(1, 100),
-            meaning_roll=random.randint(1, 100),
-        )
+        odds = self.odds_combo.currentText()
+        roll = roll_check(odds_kind(odds), random)
+        twist_roll = random.randint(1, 100) if roll == 10 else None
+        answer = resolve(question, odds, roll, twist_roll)
         self._last = answer
         self.result_label.setText(format_answer(answer))
         self.log_btn.setEnabled(True)

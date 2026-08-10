@@ -1,9 +1,18 @@
-"""Mythic-inspired oracle: answers yes/no fate questions and spins twists.
+"""Shadowdark SoloDark oracle: answer yes/no fate questions with a d20.
 
-A Fate Question rolls a d100 against a threshold chosen from the odds;
-rolls at or below the threshold answer Yes, and very high or very low
-rolls are exceptional. When the chaos roll comes in at or below the chaos
-factor, a random event fires with a focus and a two-word meaning.
+Implements the Oracle from SoloDark (the official solo rules for
+Shadowdark RPG by Kelsey Dionne / The Arcane Library). Decide the odds,
+make an oracle check, and read the verdict:
+
+* d20 result 1-9       No
+* d20 result 10        Twist - roll a Prompt to learn its nature
+* d20 result 11-20     Yes
+* Natural 1 or 20      critical - the most extreme version ("No, and")
+* odd result except 1  a "but" turnabout is attached to the verdict
+
+Odds adjust the check itself: Unlikely or Impossible rolls with
+disadvantage (2d20, keep the lowest), Likely or Certain with advantage
+(2d20, keep the highest), and Even Chance is a single d20.
 
 Everything here is a pure function of the provided rolls, so the engine
 is deterministic under test; the dialog owns the randomness.
@@ -11,55 +20,56 @@ is deterministic under test; the dialog owns the randomness.
 
 from dataclasses import dataclass
 
-# (label, threshold): a d100 at or below the threshold answers Yes. Ordered
-# from impossible to certain so a UI can present them in that direction.
+# (label, kind): the kind tells roll_check() how many dice to roll and how
+# to keep them. Ordered from unlikely to likely so a UI can present it so.
 ODDS = (
-    ("Impossible", 0),
-    ("No Way", 5),
-    ("Very Unlikely", 15),
-    ("Unlikely", 25),
-    ("50/50", 50),
-    ("Likely", 75),
-    ("Very Likely", 85),
-    ("Near Sure Thing", 95),
-    ("Has To Be", 99),
+    ("Unlikely or Impossible", "disadvantage"),
+    ("Even Chance", "standard"),
+    ("Likely or Certain", "advantage"),
 )
 
 ODDS_LABELS = tuple(label for label, _ in ODDS)
 
-# A roll at or below this is an exceptional yes, at or above this an
-# exceptional no (Mythic's 1-5 / 96-100 bands).
-EXCEPTIONAL_YES = 5
-EXCEPTIONAL_NO = 96
-
-# d100 ranges mapping to the focus of a random event.
-EVENT_FOCUS = (
-    (1, 8, "PC negative"),
-    (9, 14, "PC positive"),
-    (15, 22, "NPC negative"),
-    (23, 28, "NPC positive"),
-    (29, 36, "NPC action"),
-    (37, 44, "NPC appearance"),
-    (45, 52, "NPC altered"),
-    (53, 60, "Ambiguous"),
-    (61, 68, "Remote event"),
-    (69, 76, "PC action"),
-    (77, 84, "PC appearance"),
-    (85, 92, "New NPC"),
-    (93, 100, "PC altered"),
+# d100 prompt table: a single roll picks one verb + noun pair to spark an
+# idea or the nature of a twist. Index 0 is roll 01 and index 99 is roll 00.
+PROMPTS = (
+    ("Stop", "Freedom"), ("Tell", "Life"), ("Trust", "Battle"),
+    ("Prevent", "Lie"), ("Deliver", "Vice"), ("Dismantle", "Memory"),
+    ("Create", "Burden"), ("Resist", "Treachery"), ("Imbue", "Trial"),
+    ("Befriend", "Risk"), ("Sneak", "Prosperity"), ("Disagree", "Time"),
+    ("Illuminate", "Conflict"), ("Assemble", "Light"), ("Free", "Unnatural"),
+    ("Combine", "Information"), ("Disrupt", "Hope"), ("Demand", "Journey"),
+    ("Obstruct", "Mundane"), ("Push", "Hazard"), ("Arrive", "Family"),
+    ("Slow", "Obstacle"), ("Overcome", "Doubt"), ("Block", "Freedom"),
+    ("Consume", "Weakness"), ("Pursue", "Unknown"), ("Reward", "Glory"),
+    ("Expand", "Friend"), ("Waste", "Discovery"), ("Capture", "Lead"),
+    ("Weaken", "Storm"), ("Reveal", "Enemy"), ("Investigate", "Integrity"),
+    ("Forbid", "Science"), ("Start", "Asset"), ("Surprise", "Crime"),
+    ("Endure", "Wisdom"), ("Pull", "Justice"), ("Unleash", "Strife"),
+    ("Avoid", "Disgust"), ("Advance", "Danger"), ("Agree", "Balance"),
+    ("Deliver", "Nature"), ("Link", "Chaos"), ("Hinder", "Ambush"),
+    ("Withhold", "Wealth"), ("Lose", "Thought"), ("Evolve", "Dark"),
+    ("Fortify", "Connection"), ("Punish", "Door"), ("Ignite", "Fear"),
+    ("Awaken", "Sorcery"), ("Defy", "Honor"), ("Conceal", "Spirit"),
+    ("Invite", "Trust"), ("Break", "Loss"), ("Allow", "Failure"),
+    ("Open", "Peril"), ("Repel", "Plan"), ("Activate", "Trick"),
+    ("Gather", "Mind"), ("Give", "Pain"), ("Reverse", "Victory"),
+    ("Warn", "Death"), ("Confront", "Control"), ("Betray", "Knowledge"),
+    ("Secure", "Secret"), ("Darken", "Kindness"), ("Flee", "Exploration"),
+    ("Win", "Surprise"), ("Scatter", "Magic"), ("Contain", "Animal"),
+    ("Assist", "Way"), ("Take", "Essence"), ("Question", "Dream"),
+    ("Drop", "Anger"), ("Accept", "Vision"), ("Sacrifice", "Safety"),
+    ("Drain", "Result"), ("Hint", "Place"), ("Fumble", "Path"),
+    ("Fall", "Nourishment"), ("Ascend", "Theft"), ("Protect", "Decay"),
+    ("Escape", "Truth"), ("Defeat", "People"), ("Mend", "Help"),
+    ("Acquire", "Gear"), ("Guide", "Idea"), ("Mislead", "Order"),
+    ("Banish", "Success"), ("Uphold", "Barrier"), ("Build", "Goal"),
+    ("Change", "Luck"), ("Revoke", "Identity"), ("Seek", "Harm"),
+    ("Destroy", "Wilderness"), ("Uncover", "Motive"), ("Rest", "Shelter"),
+    ("Release", "Power"),
 )
 
-# A random event's meaning is a descriptor plus a subject: the tens digit of
-# a d100 indexes one list and the ones digit the other.
-EVENT_DESCRIPTORS = (
-    "Abandoned", "Betrayed", "Confused", "Desperate", "Frozen",
-    "Hidden", "Imprisoned", "Jubilant", "Quiet", "Shattered",
-)
-
-EVENT_SUBJECTS = (
-    "a hope", "the party", "an old ally", "a rival", "the weather",
-    "a rumor", "a treasure", "a path", "a ritual", "the dungeon",
-)
+PROMPT_LABELS = tuple(f"{verb} {noun}" for verb, noun in PROMPTS)
 
 
 @dataclass(frozen=True)
@@ -70,52 +80,56 @@ class OracleAnswer:
     odds: str
     roll: int
     answer: str
-    event: str | None = None
+    twist: str | None = None
 
 
-def odds_threshold(odds):
-    """The d100 threshold for an odds label; rolls at or below it answer Yes."""
-    for label, threshold in ODDS:
+def odds_kind(odds):
+    """How the oracle check is rolled for a given odds label."""
+    for label, kind in ODDS:
         if label == odds:
-            return threshold
+            return kind
     raise ValueError(f"Unknown odds level: {odds!r}")
 
 
-def answer_for(roll, odds):
-    """The verdict for a d100 `roll` under the given `odds`."""
-    if roll <= EXCEPTIONAL_YES:
-        return "Exceptional Yes"
-    if roll >= EXCEPTIONAL_NO:
-        return "Exceptional No"
-    return "Yes" if roll <= odds_threshold(odds) else "No"
+def roll_check(kind, rng):
+    """The d20 oracle check for a roll `kind`, using `rng` for randomness.
 
-
-def event_focus(roll):
-    """The random-event focus label for a d100 `roll`."""
-    for low, high, label in EVENT_FOCUS:
-        if low <= roll <= high:
-            return label
-    return "Ambiguous"
-
-
-def event_meaning(roll):
-    """A two-word meaning ('descriptor, subject') for a d100 `roll`."""
-    return f"{EVENT_DESCRIPTORS[roll // 10]}, {EVENT_SUBJECTS[roll % 10]}"
-
-
-def random_event(focus_roll, meaning_roll):
-    """A full random-event twist from two d100 rolls."""
-    return f"{event_focus(focus_roll)} — {event_meaning(meaning_roll)}"
-
-
-def resolve(question, odds, roll, chaos_roll=None, chaos_factor=0,
-            focus_roll=0, meaning_roll=0):
-    """Answer a fate question, optionally including a random-event twist.
-
-    A twist fires when `chaos_roll` is given and at or below `chaos_factor`;
-    its focus and meaning come from `focus_roll` and `meaning_roll`.
+    `kind` is one of "standard", "disadvantage", or "advantage"; the last
+    two roll twice and keep the lowest or highest respectively.
     """
-    event = None
-    if chaos_roll is not None and chaos_roll <= chaos_factor:
-        event = random_event(focus_roll, meaning_roll)
-    return OracleAnswer(question, odds, roll, answer_for(roll, odds), event)
+    if kind == "disadvantage":
+        return min(rng.randint(1, 20), rng.randint(1, 20))
+    if kind == "advantage":
+        return max(rng.randint(1, 20), rng.randint(1, 20))
+    return rng.randint(1, 20)
+
+
+def prompt(roll):
+    """The verb-noun prompt for a d100 `roll` (00 reads as 100)."""
+    if not 1 <= roll <= 100:
+        raise ValueError(f"Prompt roll out of range: {roll!r}")
+    return PROMPT_LABELS[roll - 1]
+
+
+def answer_for(roll):
+    """The verdict for a d20 oracle check `roll`."""
+    if roll == 1:
+        return "No, and"
+    if roll == 20:
+        return "Yes, and"
+    if roll == 10:
+        return "Twist"
+    base = "Yes" if roll >= 11 else "No"
+    if roll % 2:
+        return f"{base}, but"
+    return base
+
+
+def resolve(question, odds, roll, twist_roll=None):
+    """Answer a fate question from its final d20 oracle check `roll`.
+
+    When the check lands on 10 (a twist) and `twist_roll` is given, the
+    answer carries the prompt describing the twist's nature.
+    """
+    twist = prompt(twist_roll) if roll == 10 and twist_roll is not None else None
+    return OracleAnswer(question, odds, roll, answer_for(roll), twist)

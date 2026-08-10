@@ -1,4 +1,4 @@
-"""Tests for the Mythic-style oracle engine (no GUI required)."""
+"""Tests for the Shadowdark SoloDark oracle engine (no GUI required)."""
 
 import pytest
 
@@ -6,105 +6,129 @@ from hexlog.oracle import (
     ODDS_LABELS,
     OracleAnswer,
     answer_for,
-    event_focus,
-    event_meaning,
-    odds_threshold,
-    random_event,
+    odds_kind,
+    prompt,
     resolve,
+    roll_check,
 )
 from hexlog.ui.oracle_dialog import format_answer
 
 
-def test_odds_threshold_follows_the_scale():
-    assert odds_threshold("Impossible") == 0
-    assert odds_threshold("50/50") == 50
-    assert odds_threshold("Has To Be") == 99
+class FakeRng:
+    """A scripted rng: randint() returns the next queued value."""
+
+    def __init__(self, values):
+        self.values = list(values)
+
+    def randint(self, low, high):
+        return self.values.pop(0)
 
 
-def test_odds_threshold_rejects_unknown_labels():
+def test_odds_kind_maps_the_three_levels():
+    assert odds_kind("Unlikely or Impossible") == "disadvantage"
+    assert odds_kind("Even Chance") == "standard"
+    assert odds_kind("Likely or Certain") == "advantage"
+
+
+def test_odds_kind_rejects_unknown_labels():
     with pytest.raises(ValueError):
-        odds_threshold("Maybe?")
+        odds_kind("Maybe?")
 
 
-def test_answer_for_uses_odds_threshold():
-    assert answer_for(30, "50/50") == "Yes"
-    assert answer_for(50, "50/50") == "Yes"
-    assert answer_for(51, "50/50") == "No"
+def test_roll_check_standard_uses_a_single_roll():
+    assert roll_check("standard", FakeRng([7])) == 7
 
 
-def test_answer_for_marks_exceptional_rolls():
-    assert answer_for(1, "50/50") == "Exceptional Yes"
-    assert answer_for(5, "50/50") == "Exceptional Yes"
-    assert answer_for(96, "50/50") == "Exceptional No"
-    assert answer_for(100, "50/50") == "Exceptional No"
+def test_roll_check_disadvantage_keeps_the_lowest():
+    assert roll_check("disadvantage", FakeRng([18, 5])) == 5
 
 
-def test_answer_for_extremes_of_the_scale():
-    assert answer_for(10, "Impossible") == "No"
-    assert answer_for(80, "Has To Be") == "Yes"
-    assert answer_for(100, "Has To Be") == "Exceptional No"
+def test_roll_check_advantage_keeps_the_highest():
+    assert roll_check("advantage", FakeRng([8, 14])) == 14
 
 
-def test_event_focus_covers_all_ranges():
-    assert event_focus(1) == "PC negative"
-    assert event_focus(8) == "PC negative"
-    assert event_focus(29) == "NPC action"
-    assert event_focus(53) == "Ambiguous"
-    assert event_focus(93) == "PC altered"
-    assert event_focus(100) == "PC altered"
+def test_answer_for_verdicts_by_band():
+    assert answer_for(1) == "No, and"
+    assert answer_for(6) == "No"
+    assert answer_for(9) == "No, but"
+    assert answer_for(10) == "Twist"
+    assert answer_for(12) == "Yes"
+    assert answer_for(15) == "Yes, but"
+    assert answer_for(20) == "Yes, and"
 
 
-def test_event_meaning_splits_into_descriptor_and_subject():
-    assert event_meaning(42) == "Frozen, an old ally"
+def test_answer_for_odd_rolls_get_a_but():
+    assert answer_for(3) == "No, but"
+    assert answer_for(5) == "No, but"
+    assert answer_for(11) == "Yes, but"
+    assert answer_for(19) == "Yes, but"
 
 
-def test_random_event_composes_focus_and_meaning():
-    assert random_event(35, 42) == "NPC action — Frozen, an old ally"
+def test_answer_for_even_rolls_have_no_turnabout():
+    assert answer_for(2) == "No"
+    assert answer_for(8) == "No"
+    assert answer_for(14) == "Yes"
+    assert answer_for(18) == "Yes"
 
 
-def test_resolve_plain_answer_has_no_event():
-    answer = resolve("Is the gate guarded?", "50/50", 30)
-    assert answer == OracleAnswer("Is the gate guarded?", "50/50", 30, "Yes")
-    assert answer.event is None
+def test_prompt_picks_verb_and_noun_rows():
+    assert prompt(1) == "Stop Freedom"
+    assert prompt(24) == "Block Freedom"
+    assert prompt(42) == "Agree Balance"
+    assert prompt(99) == "Rest Shelter"
+    assert prompt(100) == "Release Power"
 
 
-def test_resolve_fires_event_within_chaos_factor():
-    answer = resolve("Is the gate guarded?", "50/50", 30,
-                     chaos_roll=4, chaos_factor=5, focus_roll=35, meaning_roll=42)
-    assert answer.answer == "Yes"
-    assert answer.event == "NPC action — Frozen, an old ally"
+def test_prompt_rejects_out_of_range_rolls():
+    with pytest.raises(ValueError):
+        prompt(0)
+    with pytest.raises(ValueError):
+        prompt(101)
 
 
-def test_resolve_skips_event_outside_chaos_factor():
-    answer = resolve("Is the gate guarded?", "50/50", 30,
-                     chaos_roll=6, chaos_factor=5, focus_roll=35, meaning_roll=42)
-    assert answer.event is None
+def test_resolve_plain_answer_has_no_twist():
+    answer = resolve("Is the gate guarded?", "Even Chance", 14)
+    assert answer == OracleAnswer("Is the gate guarded?", "Even Chance", 14, "Yes")
+    assert answer.twist is None
 
 
-def test_resolve_ignores_chaos_factor_without_a_chaos_roll():
-    answer = resolve("Is the gate guarded?", "50/50", 30,
-                     chaos_factor=5, focus_roll=35, meaning_roll=42)
-    assert answer.event is None
+def test_resolve_twist_fires_only_on_a_roll_of_ten():
+    answer = resolve("Is the gate guarded?", "Even Chance", 10, twist_roll=42)
+    assert answer.answer == "Twist"
+    assert answer.twist == "Agree Balance"
+
+
+def test_resolve_ignores_twist_roll_outside_a_ten():
+    answer = resolve("Is the gate guarded?", "Even Chance", 12, twist_roll=42)
+    assert answer.twist is None
+
+
+def test_resolve_twist_needs_a_twist_roll():
+    answer = resolve("Is the gate guarded?", "Even Chance", 10)
+    assert answer.twist is None
 
 
 def test_format_answer_includes_every_part():
-    answer = OracleAnswer("Is the gate guarded?", "50/50", 30, "Yes",
-                          event="NPC action — Frozen, an old ally")
+    answer = OracleAnswer("Is the gate guarded?", "Even Chance", 10, "Twist",
+                          twist="Agree Balance")
     assert format_answer(answer) == (
         "Q: Is the gate guarded?\n"
-        "Odds 50/50 - rolled 30: Yes\n"
-        "Random event: NPC action — Frozen, an old ally"
+        "Odds Even Chance - rolled 10: Twist\n"
+        "Twist: Agree Balance"
     )
 
 
-def test_format_answer_omits_missing_event():
-    answer = OracleAnswer("Is the gate guarded?", "50/50", 30, "Yes")
+def test_format_answer_omits_missing_twist():
+    answer = OracleAnswer("Is the gate guarded?", "Even Chance", 14, "Yes")
     assert format_answer(answer) == (
         "Q: Is the gate guarded?\n"
-        "Odds 50/50 - rolled 30: Yes"
+        "Odds Even Chance - rolled 14: Yes"
     )
 
 
-def test_odds_labels_order_matches_impossible_to_certain():
-    assert ODDS_LABELS[0] == "Impossible"
-    assert ODDS_LABELS[-1] == "Has To Be"
+def test_odds_labels_order_matches_the_booklet():
+    assert ODDS_LABELS == (
+        "Unlikely or Impossible",
+        "Even Chance",
+        "Likely or Certain",
+    )
