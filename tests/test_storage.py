@@ -128,6 +128,62 @@ def test_load_recovers_from_backup_when_main_file_is_corrupt(isolated_paths):
     assert [e["id"] for e in recovered[C.CHARACTERS]] == ["v1"]
 
 
+def test_fresh_start_produces_no_warnings(isolated_paths):
+    from hexlog.storage import Store
+
+    assert Store().warnings == []
+
+
+def test_corrupt_main_is_quarantined_and_warned(isolated_paths):
+    from hexlog.storage import Store
+
+    os.makedirs(C.DATA_DIR, exist_ok=True)
+    with open(C.DATA_FILE, "w") as fh:
+        fh.write("{ broken json")
+
+    store = Store()
+    assert store[C.CHARACTERS] == []
+    assert os.path.exists(C.DATA_FILE + ".corrupt")
+    with open(C.DATA_FILE + ".corrupt") as fh:
+        assert fh.read() == "{ broken json"
+    assert any("data.json.corrupt" in w for w in store.warnings)
+
+
+def test_corrupt_main_recovers_backup_and_warns(isolated_paths):
+    from hexlog.storage import Store
+
+    store = Store()
+    store.add(C.CHARACTERS, {"id": "v1", "name": "first"})
+    store.save()
+    store.add(C.CHARACTERS, {"id": "v2", "name": "second"})
+    store.save()
+    with open(C.DATA_FILE, "w") as fh:
+        fh.write("{ broken json")
+
+    recovered = Store()
+    assert [e["id"] for e in recovered[C.CHARACTERS]] == ["v1"]
+    assert os.path.exists(C.DATA_FILE + ".corrupt")
+    assert any("Recovered" in w for w in recovered.warnings)
+
+
+def test_both_files_corrupt_are_quarantined(isolated_paths):
+    from hexlog.storage import Store
+
+    store = Store()
+    store.add(C.CHARACTERS, {"id": "v1", "name": "first"})
+    store.save()
+    with open(C.DATA_FILE, "w") as fh:
+        fh.write("{ broken main")
+    with open(C.DATA_FILE + ".bak", "w") as fh:
+        fh.write("{ broken backup")
+
+    store = Store()
+    assert store[C.CHARACTERS] == []
+    assert os.path.exists(C.DATA_FILE + ".corrupt")
+    assert os.path.exists(C.DATA_FILE + ".bak.corrupt")
+    assert len([w for w in store.warnings if "unreadable" in w]) == 2
+
+
 def test_migrates_legacy_root_data_into_subdir(isolated_paths):
     from hexlog.storage import load_data
 
@@ -139,7 +195,7 @@ def test_migrates_legacy_root_data_into_subdir(isolated_paths):
     with open(os.path.join(legacy, "data.json.bak"), "w") as fh:
         json.dump({"characters": []}, fh)
 
-    data = load_data()
+    data, _ = load_data()
     assert data["characters"] == [{"id": "legacy"}]
     assert os.path.exists(C.DATA_FILE)
     assert not os.path.exists(os.path.join(legacy, "data.json"))
@@ -155,7 +211,7 @@ def test_migrates_recent_subdir_layout(isolated_paths):
     with open(os.path.join(recent, "data.json"), "w") as fh:
         json.dump({"characters": [{"id": "recent"}]}, fh)
 
-    data = load_data()
+    data, _ = load_data()
     assert data["characters"] == [{"id": "recent"}]
     assert os.path.exists(C.DATA_FILE)
     assert not os.path.exists(recent)

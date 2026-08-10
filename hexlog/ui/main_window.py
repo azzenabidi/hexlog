@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QToolBar,
@@ -37,6 +38,8 @@ class MainWindow(QMainWindow):
         self.theme_name = "dark"
         # One store shared by every tab; a single save() persists all changes.
         self.store = Store()
+        if self.store.warnings:
+            QMessageBox.warning(self, C.APP_NAME, "\n".join(self.store.warnings))
 
         self._pending_refresh = None  # tab that last reported a change
         self._save_timer = QTimer(self)

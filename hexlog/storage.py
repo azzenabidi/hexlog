@@ -55,23 +55,47 @@ def _read_json(path):
         return None
 
 
-def load_data() -> dict:
+def _quarantine(path, suffix):
+    """Copy an unreadable store file aside so a later save cannot overwrite it."""
+    try:
+        shutil.copy2(path, path + suffix)
+    except OSError:
+        pass  # nothing more we can do; the app must still start
+
+
+def load_data():
     """Read the JSON store, falling back to a fresh template on any error.
 
-    A missing or corrupt main file must not crash the app on startup; when the
-    main file is unreadable, the backup from the last good save is used first.
+    Returns a (data, warnings) pair: `data` is always a usable store and
+    `warnings` describes any recovery performed. A corrupt or missing main file
+    must not crash startup; the backup from the last good save is used first,
+    and unreadable files are copied aside (data.json.corrupt) instead of being
+    silently overwritten by the next autosave.
     """
     migrate_legacy_data()
     ensure_dirs()
+    warnings = []
     data = _read_json(C.DATA_FILE)
     if data is None:
+        if os.path.exists(C.DATA_FILE):
+            _quarantine(C.DATA_FILE, ".corrupt")
+            warnings.append(
+                "data.json was unreadable; the original was kept as data.json.corrupt."
+            )
         data = _read_json(C.DATA_FILE + ".bak")
+        if data is not None:
+            warnings.append("Recovered the last good copy from the backup.")
+        elif os.path.exists(C.DATA_FILE + ".bak"):
+            _quarantine(C.DATA_FILE + ".bak", ".corrupt")
+            warnings.append(
+                "The backup was unreadable too; it was kept as data.json.bak.corrupt."
+            )
     if not isinstance(data, dict):
         data = copy.deepcopy(C.DEFAULT_DATA)
     # Backfill keys added in newer versions for compatibility with old files.
     for key in C.DEFAULT_DATA:
         data.setdefault(key, [])
-    return data
+    return data, warnings
 
 
 def save_data(data: dict) -> None:
@@ -113,7 +137,7 @@ class Store:
     """
 
     def __init__(self) -> None:
-        self.data = load_data()
+        self.data, self.warnings = load_data()
 
     def __getitem__(self, kind: str) -> list:
         """Return the list of records for a given kind key."""
