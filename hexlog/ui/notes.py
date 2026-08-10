@@ -34,6 +34,11 @@ def mention_pattern(name):
     return re.compile(r"\b" + re.escape(name) + r"\b")
 
 
+def dialogue_caret_offset(name):
+    """Offset of the caret after inserting `\\nName: ""`: between the quotes."""
+    return len(f"\n{name}: \"")
+
+
 def referenced_ids(entities, text):
     """Ids of entities whose name appears in the note text (whole-word match).
 
@@ -292,17 +297,21 @@ class NotesTab(QWidget):
         return note
 
     def _insert_dialogue(self):
-        """Insert a newline, `Name: "`, and place the cursor between the quotes."""
+        """Insert a newline, `Name: "`, and place the cursor between the quotes.
+
+        A single cursor is reused for both insertions and the final caret
+        placement; the widget only learns about it via setTextCursor() at the
+        end, so the caret does not depend on Qt syncing a cursor copy back.
+        """
         name = self._selected_name()
         if not name:
             return
-        text_cursor = self.editor.textCursor()
-        text_cursor.insertText(f"\n{name}: \"")
-        inner = self.editor.textCursor().position()
-        text_cursor.insertText("\"")
-        new_cursor = self.editor.textCursor()
-        new_cursor.setPosition(inner)
-        self.editor.setTextCursor(new_cursor)
+        cursor = self.editor.textCursor()
+        start = cursor.position()
+        cursor.insertText(f"\n{name}: \"")
+        cursor.insertText("\"")
+        cursor.setPosition(start + dialogue_caret_offset(name))
+        self.editor.setTextCursor(cursor)
         self.editor.setFocus()
         self.highlighter.rehighlight()
 
