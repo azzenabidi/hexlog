@@ -44,6 +44,8 @@ DATA_FILE = os.path.join(DATA_DIR, "data.json")
 MAPS_DIR = os.path.join(DATA_DIR, "maps")
 # Character/NPC token images are copied here for the same reason.
 TOKENS_DIR = os.path.join(DATA_DIR, "tokens")
+# Stashed before a self-update restart so the relaunched app can show them.
+RELEASE_NOTES_FILE = os.path.join(DATA_DIR, "release-notes.txt")
 LEGACY_DATA_DIR = os.path.join(os.path.expanduser("~"), ".hexlog")
 
 # Cycled through when creating new characters so tokens start visually distinct.

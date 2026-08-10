@@ -19,7 +19,9 @@ from hexlog.ui.entities import CharactersTab, LocationsTab, MonsterTab, NPCsTab
 from hexlog.ui.notes import NotesTab
 from hexlog.ui.oracle_dialog import OracleDialog
 from hexlog.ui.theme import get_theme_stylesheet, toggle_theme_name
+from hexlog.ui.update_dialog import ReleaseNotesDialog, UpdateDialog
 from hexlog.ui.vtt import MapsTab
+from hexlog.updater import load_and_clear_release_notes
 
 
 def save_error_message(error):
@@ -93,6 +95,12 @@ class MainWindow(QMainWindow):
         )
         self.refresh()
 
+        # After a self-update the updater stashes the new release's notes
+        # here; surface them once, once the event loop can show the dialog.
+        release_notes = load_and_clear_release_notes()
+        if release_notes:
+            QTimer.singleShot(0, lambda: ReleaseNotesDialog(self, release_notes).show())
+
     def _setup_theme_toggle(self):
         toolbar = QToolBar("Theme")
         toolbar.setMovable(False)
@@ -104,9 +112,16 @@ class MainWindow(QMainWindow):
 
     def _setup_help_menu(self):
         menu = self.menuBar().addMenu("&Help")
+        update_action = QAction("&Check for Updates…", self)
+        update_action.triggered.connect(self._check_for_updates)
+        menu.addAction(update_action)
         about_action = QAction("About Hexlog", self)
         about_action.triggered.connect(self._show_about)
         menu.addAction(about_action)
+
+    def _check_for_updates(self):
+        """Open the update dialog, which may download and restart the app."""
+        UpdateDialog(self).exec()
 
     def _setup_tools_menu(self):
         menu = self.menuBar().addMenu("&Tools")
