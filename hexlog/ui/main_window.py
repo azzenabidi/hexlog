@@ -21,6 +21,25 @@ from hexlog.ui.theme import get_theme_stylesheet, toggle_theme_name
 from hexlog.ui.vtt import MapsTab
 
 
+def save_error_message(error):
+    """Human-readable explanation of a failed save for the status bar."""
+    return f"Could not save your data: {error}"
+
+
+def flush_and_report(store, notify):
+    """Persist `store`, reporting failures through `notify`.
+
+    A disk-full or permission error must not raise inside a Qt timer slot,
+    where nothing could catch it. Returns True when the save succeeded.
+    """
+    try:
+        store.save()
+    except OSError as error:
+        notify(save_error_message(error))
+        return False
+    return True
+
+
 class MainWindow(QMainWindow):
     """Top-level window hosting all the tabs on a shared data store.
 
@@ -132,7 +151,8 @@ class MainWindow(QMainWindow):
         self._flush()
 
     def _flush(self):
-        self.store.save()
+        if not flush_and_report(self.store, self.statusBar().showMessage):
+            return
         if self._pending_refresh is not None:
             self._pending_refresh.refresh()
             self._pending_refresh = None
