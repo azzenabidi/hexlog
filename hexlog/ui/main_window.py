@@ -1,7 +1,7 @@
 """Main application window wiring the tabs together."""
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QLabel,
@@ -17,6 +17,7 @@ from hexlog import __version__, constants as C
 from hexlog.storage import Store
 from hexlog.ui.entities import CharactersTab, LocationsTab, MonsterTab, NPCsTab
 from hexlog.ui.notes import NotesTab
+from hexlog.ui.oracle_dialog import OracleDialog
 from hexlog.ui.theme import get_theme_stylesheet, toggle_theme_name
 from hexlog.ui.vtt import MapsTab
 
@@ -68,7 +69,6 @@ class MainWindow(QMainWindow):
 
         self._setup_theme_toggle()
         self._setup_help_menu()
-
         self.tabs = QTabWidget()
         self.characters_tab = CharactersTab(self.store, lambda: self._on_changed(self.characters_tab))
         self.npcs_tab = NPCsTab(self.store, lambda: self._on_changed(self.npcs_tab))
@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
         self.maps_tab.set_theme(self.theme_name)
+        self._setup_tools_menu()
 
         self.statusBar().showMessage(
             f"Hexlog - characters, NPCs, locations, monsters, journal, VTT tokens. "
@@ -106,6 +107,18 @@ class MainWindow(QMainWindow):
         about_action = QAction("About Hexlog", self)
         about_action.triggered.connect(self._show_about)
         menu.addAction(about_action)
+
+    def _setup_tools_menu(self):
+        menu = self.menuBar().addMenu("&Tools")
+        oracle_action = QAction("&Oracle…", self)
+        oracle_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        oracle_action.triggered.connect(self._open_oracle)
+        menu.addAction(oracle_action)
+
+    def _open_oracle(self):
+        """Open the oracle dialog; answers can be logged into the journal."""
+        dialog = OracleDialog(self, insert_text=self.notes_tab.insert_text)
+        dialog.exec()
 
     def _show_about(self):
         dialog = QDialog(self)

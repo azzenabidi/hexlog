@@ -310,6 +310,22 @@ class NotesTab(QWidget):
         self._refresh_note_label(note)
         self.on_change()
 
+    def insert_text(self, text):
+        """Insert `text` into the current note on its own line, creating a draft if needed.
+
+        Used by the oracle and dice tools to log rolls and answers; the
+        editor's textChanged autosave and the debounced highlight/scan handle
+        the rest.
+        """
+        if self._syncing:
+            return
+        self._ensure_note()
+        editor_text = self.editor.toPlainText()
+        if editor_text and not editor_text.endswith("\n"):
+            self.editor.insertPlainText("\n")
+        self.editor.insertPlainText(text)
+        self.editor.setFocus()
+
     def _ensure_note(self):
         """Return the note being edited, lazily creating a draft if needed."""
         if self.current_note_id is not None:
