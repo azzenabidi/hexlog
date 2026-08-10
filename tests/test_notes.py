@@ -1,6 +1,11 @@
 """Tests for the journal's mention matching (no GUI required)."""
 
-from hexlog.ui.notes import dialogue_caret_offset, mention_pattern, referenced_ids
+from hexlog.ui.notes import (
+    MentionHighlighter,
+    dialogue_caret_offset,
+    mention_pattern,
+    referenced_ids,
+)
 
 
 def test_referenced_matches_whole_words_only():
@@ -29,3 +34,32 @@ def test_dialogue_caret_sits_between_the_quotes():
         assert offset == len(prefix)
         assert text[offset - 1] == '"'  # opening quote, just before the caret
         assert text[offset] == '"'  # closing quote, just after the caret
+
+
+def test_highlighter_ignores_unnamed_entities():
+    hl = MentionHighlighter(None, lambda: [{"id": "1", "name": ""}, {"id": "2", "name": "Marc"}])
+    hl.refresh()
+    assert [pattern for pattern, _ in hl.rules] == [mention_pattern("Marc")]
+
+
+def test_highlighter_caches_patterns_by_name():
+    entities = [{"id": "1", "name": "Cat"}, {"id": "2", "name": "Goblin King"}]
+    hl = MentionHighlighter(None, lambda: entities)
+
+    hl.refresh()
+    cached = dict(hl._pattern_cache)
+    assert set(cached) == {"Cat", "Goblin King"}
+
+    # Rebuilding rules for the same names must reuse the cached patterns.
+    hl.refresh()
+    assert hl._pattern_cache == cached
+
+
+def test_highlighter_drops_stale_patterns_on_rename():
+    entities = [{"id": "1", "name": "Cat"}, {"id": "2", "name": "Goblin King"}]
+    hl = MentionHighlighter(None, lambda: entities)
+    hl.refresh()
+
+    entities[0]["name"] = "Tiger"
+    hl.refresh()
+    assert set(hl._pattern_cache) == {"Tiger", "Goblin King"}

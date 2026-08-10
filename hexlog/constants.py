@@ -78,6 +78,10 @@ TOKEN_MIN_DIAMETER = 12
 TOKEN_MAX_DIAMETER = 256
 ERROR_COLOR = "#e74c3c"
 
+# Typing pause (ms) before the journal re-scans and re-highlights mentions;
+# debounced so long notes + many entities don't stutter on every keystroke.
+REHIGHLIGHT_DELAY_MS = 200
+
 
 def new_id() -> str:
     """Generate a short, collision-free record id."""

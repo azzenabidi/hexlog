@@ -8,7 +8,7 @@ any character, NPC, or location.
 import re
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut, QTextCharFormat
 from PySide6.QtWidgets import (
     QComboBox,
@@ -53,23 +53,35 @@ class MentionHighlighter:
 
     Uses QTextEdit.ExtraSelection, which overlays formatting without
     modifying the underlying document text, so highlighting is purely visual.
+    Compiled patterns are cached by name so re-highlighting only pays for
+    regex compilation when an entity is added or renamed.
     """
 
     def __init__(self, edit, get_entities):
         self.edit = edit
         self.get_entities = get_entities  # callback returns the current entity lists
         self.rules = []  # (compiled regex, color) pairs
+        self._pattern_cache = {}
 
     def refresh(self):
-        """(Re)build regex rules from the current entities."""
+        """(Re)build regex rules from the current entities, reusing cached patterns."""
         self.rules = []
-        for entity in self.get_entities():
+        entities = self.get_entities()
+        live_names = set()
+        for entity in entities:
             name = entity.get("name", "")
-            if name:
-                # Word boundaries keep "Al" from matching inside "Altar".
-                self.rules.append(
-                    (mention_pattern(name), entity.get("color", C.DEFAULT_ENTITY_COLOR))
-                )
+            if not name:
+                continue
+            live_names.add(name)
+            pattern = self._pattern_cache.get(name)
+            if pattern is None:
+                pattern = mention_pattern(name)
+                self._pattern_cache[name] = pattern
+            self.rules.append((pattern, entity.get("color", C.DEFAULT_ENTITY_COLOR)))
+        # Drop cached patterns for names that no longer exist to bound memory.
+        for name in list(self._pattern_cache):
+            if name not in live_names:
+                del self._pattern_cache[name]
 
     def rehighlight(self):
         """Re-scan the editor text and apply all matching highlights."""
@@ -160,8 +172,14 @@ class NotesTab(QWidget):
             self.editor,
             lambda: self.store[C.CHARACTERS] + self.store[C.NPCS] + self.store[C.LOCATIONS],
         )
-        # Re-highlight on every keystroke to keep mentions current.
-        self.editor.textChanged.connect(self.highlighter.rehighlight)
+        # Highlighting and the @mention reference scan are the only O(text x
+        # entities) work per keystroke, so both are debounced: typing stays
+        # responsive and the scan only runs once the user pauses.
+        self._scan_timer = QTimer(self)
+        self._scan_timer.setSingleShot(True)
+        self._scan_timer.setInterval(C.REHIGHLIGHT_DELAY_MS)
+        self._scan_timer.timeout.connect(self._on_rehighlight_due)
+        self.editor.textChanged.connect(self._schedule_rehighlight)
 
         QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(self._on_new_note)
         self._delete_shortcut = QShortcut(
@@ -175,6 +193,26 @@ class NotesTab(QWidget):
         self.refresh_mention_bar()
         self.refresh_note_list()
         self.highlighter.rehighlight()
+        self._rescan_references()
+
+    def _schedule_rehighlight(self):
+        """Restart the debounce timer after a keystroke."""
+        self._scan_timer.start()
+
+    def _on_rehighlight_due(self):
+        """Run once typing pauses: refresh highlights and stored references."""
+        self.highlighter.rehighlight()
+        self._rescan_references()
+
+    def _rescan_references(self):
+        """Recompute the @mention references stored on the note being edited."""
+        note = self._find_note(self.current_note_id) if self.current_note_id else None
+        if note is None:
+            return
+        text = self.editor.toPlainText()
+        note["char_ids"] = referenced_ids(self.store[C.CHARACTERS], text)
+        note["npc_ids"] = referenced_ids(self.store[C.NPCS], text)
+        note["loc_ids"] = referenced_ids(self.store[C.LOCATIONS], text)
 
     def refresh_mention_bar(self):
         """Rebuild the entity dropdown for dialogue/@mention insertion."""
@@ -258,17 +296,17 @@ class NotesTab(QWidget):
         return self.store.find(C.NOTES, note_id)
 
     def _autosave(self):
-        """Persist the current note (creating it on first keystroke)."""
+        """Persist the current note (creating it on first keystroke).
+
+        Reference ids are left for _rescan_references(), which runs on the
+        debounce timer; scanning on every keystroke here is O(text x entities).
+        """
         if self._syncing:
             return
         note = self._ensure_note()
         note["title"] = self.title_edit.text().strip()
-        text = self.editor.toPlainText()
-        note["text"] = text
+        note["text"] = self.editor.toPlainText()
         note["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-        note["char_ids"] = referenced_ids(self.store[C.CHARACTERS], text)
-        note["npc_ids"] = referenced_ids(self.store[C.NPCS], text)
-        note["loc_ids"] = referenced_ids(self.store[C.LOCATIONS], text)
         self._refresh_note_label(note)
         self.on_change()
 
