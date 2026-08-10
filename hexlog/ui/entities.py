@@ -34,6 +34,11 @@ from hexlog.ui.dialogs import confirm
 from hexlog.validation import validate_name
 
 
+def draft_color(entities):
+    """Color a new entity will get: the first palette color not already used."""
+    return QColor(next_color(entities))
+
+
 class EntityTab(QWidget):
     """Generic master-detail editor for characters, NPCs, locations, monsters.
 
@@ -201,7 +206,9 @@ class EntityTab(QWidget):
                 for edit in self.extra_edits.values():
                     edit.clear()
                 self.desc_edit.clear()
-                self.color = QColor(C.DEFAULT_ENTITY_COLOR)
+                # Show the color the draft will actually get (see _ensure),
+                # not a generic default that never matches what gets saved.
+                self.color = draft_color(self._entities())
                 if self.enable_image:
                     self.image_name = None
                     self._update_image_label()
@@ -269,7 +276,7 @@ class EntityTab(QWidget):
             "id": C.new_id(),
             "name": f"New {self.entity_label}",
             self.desc_attr: "",
-            "color": QColor(next_color(self._entities())).name(),
+            "color": draft_color(self._entities()).name(),
         }
         for attr, _ in self.extra_fields:
             entity[attr] = ""
