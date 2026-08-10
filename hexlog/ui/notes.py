@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import constants as C
+from hexlog.dice import MODE_LABELS, roll
 from hexlog.ui.dialogs import confirm
 
 
@@ -111,6 +112,7 @@ class NotesTab(QWidget):
         self.on_change = on_change
         self.current_note_id = None
         self._syncing = False
+        self._last_roll = None  # most recent Roll, for inserting into the note
 
         root = QHBoxLayout(self)
 
@@ -156,6 +158,32 @@ class NotesTab(QWidget):
         self.title_edit.textChanged.connect(self._autosave)
         title_row.addWidget(self.title_edit, 1)
         right.addLayout(title_row)
+
+        # Dice bar: roll standard notation (optionally with advantage or
+        # disadvantage) and insert the result into the note text.
+        dice_row = QHBoxLayout()
+        dice_row.addWidget(QLabel("Dice:"))
+        self.dice_edit = QLineEdit()
+        self.dice_edit.setPlaceholderText("e.g. 2d6+1")
+        self.dice_edit.setMaximumWidth(120)
+        self.dice_edit.returnPressed.connect(self._roll_dice)
+        self.dice_mode = QComboBox()
+        for label, _mode in MODE_LABELS:
+            self.dice_mode.addItem(label)
+        self.dice_mode.setMaximumWidth(120)
+        self.roll_btn = QPushButton("Roll")
+        self.roll_btn.clicked.connect(self._roll_dice)
+        self.dice_result = QLabel("")
+        self.dice_result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.insert_roll_btn = QPushButton("Insert")
+        self.insert_roll_btn.setEnabled(False)
+        self.insert_roll_btn.clicked.connect(self._insert_roll)
+        dice_row.addWidget(self.dice_edit)
+        dice_row.addWidget(self.dice_mode)
+        dice_row.addWidget(self.roll_btn)
+        dice_row.addWidget(self.dice_result, 1)
+        dice_row.addWidget(self.insert_roll_btn)
+        right.addLayout(dice_row)
 
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText(
@@ -325,6 +353,26 @@ class NotesTab(QWidget):
             self.editor.insertPlainText("\n")
         self.editor.insertPlainText(text)
         self.editor.setFocus()
+
+    def _roll_dice(self):
+        """Roll the entered notation, show its description, and enable Insert."""
+        mode = dict(MODE_LABELS).get(self.dice_mode.currentText())
+        try:
+            self._last_roll = roll(self.dice_edit.text(), mode=mode)
+        except ValueError as error:
+            self._last_roll = None
+            self.dice_result.setText(str(error))
+            self.dice_result.setStyleSheet(f"color: {C.ERROR_COLOR};")
+            self.insert_roll_btn.setEnabled(False)
+            return
+        self.dice_result.setText(self._last_roll.description())
+        self.dice_result.setStyleSheet("")
+        self.insert_roll_btn.setEnabled(True)
+
+    def _insert_roll(self):
+        """Insert the last successful roll into the current note."""
+        if self._last_roll is not None:
+            self.insert_text(self._last_roll.description())
 
     def _ensure_note(self):
         """Return the note being edited, lazily creating a draft if needed."""
