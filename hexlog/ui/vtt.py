@@ -59,6 +59,25 @@ def kind_label(kind):
     return "Character"
 
 
+# QPixmaps are expensive to decode, and tab switches rebuild the scene from
+# the same files every time, so decoded images are memoized by path. The cache
+# is bounded in practice: images are copied into MAPS_DIR/TOKENS_DIR under
+# random names and never removed mid-session.
+_pixmap_cache = {}
+
+
+def load_pixmap_cached(path):
+    """Return the decoded QPixmap for `path`, loading it only once.
+
+    Returns None for an unreadable file so callers can treat a missing map
+    or token image the same as an absent one.
+    """
+    if path not in _pixmap_cache:
+        pixmap = QPixmap(path)
+        _pixmap_cache[path] = None if pixmap.isNull() else pixmap
+    return _pixmap_cache[path]
+
+
 def resize_diameter(center_x, center_y, drag_x, drag_y,
                     minimum=C.TOKEN_MIN_DIAMETER, maximum=C.TOKEN_MAX_DIAMETER):
     """New token diameter for a corner drag from the token center to `drag`.
@@ -87,14 +106,10 @@ class TokenItem(QGraphicsRectItem):
         self.diameter = diameter
         self.image = image
         self._label = short_label(name)
-        # Load the pixmap once at construction rather than every paint().
         self._pixmap = None
         if image:
             path = image if os.path.isabs(image) else os.path.join(C.TOKENS_DIR, image)
-            if os.path.exists(path):
-                pix = QPixmap(path)
-                if not pix.isNull():
-                    self._pixmap = pix
+            self._pixmap = load_pixmap_cached(path)
         self.setBrush(QBrush(QColor(color)))
         pen = QPen(QColor(C.TOKEN_BORDER_COLOR), 2)
         # NPCs use a dashed outline to visually stand apart from characters.
@@ -497,12 +512,11 @@ class MapsTab(QWidget):
         map_path = scene.get("map_path")
         if map_path and not os.path.isabs(map_path):
             map_path = os.path.join(C.MAPS_DIR, map_path)
-        if map_path and os.path.exists(map_path):
-            pixmap = QPixmap(map_path)
-            if not pixmap.isNull():
-                self.background_item = self.scene.addPixmap(pixmap)
-                # Scene bounds follow the map so Fit and zoom behave predictably.
-                self.scene.setSceneRect(QRectF(pixmap.rect()))
+        pixmap = load_pixmap_cached(map_path) if map_path else None
+        if pixmap is not None:
+            self.background_item = self.scene.addPixmap(pixmap)
+            # Scene bounds follow the map so Fit and zoom behave predictably.
+            self.scene.setSceneRect(QRectF(pixmap.rect()))
         else:
             # No map loaded: the theme-aware canvas background shows through.
             self.scene.setSceneRect(0, 0, 1000, 700)

@@ -1,7 +1,20 @@
 """Tests for pure VTT helpers (no GUI required)."""
 
 from hexlog import constants as C
-from hexlog.ui.vtt import kind_label, resize_diameter, short_label
+from hexlog.ui.vtt import (
+    kind_label,
+    load_pixmap_cached,
+    resize_diameter,
+    short_label,
+)
+
+
+class FakePixmap:
+    def __init__(self, valid=True):
+        self.valid = valid
+
+    def isNull(self):
+        return not self.valid
 
 
 def test_short_label():
@@ -36,3 +49,36 @@ def test_resize_diameter_clamps_to_maximum():
 def test_resize_diameter_is_centered_and_symmetric():
     assert resize_diameter(10, 10, 50, 30) == resize_diameter(10, 10, 30, 50)
     assert resize_diameter(10, 10, 50, 30) == 80
+
+
+def test_pixmap_cache_loads_each_path_once(monkeypatch):
+    decoded = []
+    monkeypatch.setattr("hexlog.ui.vtt._pixmap_cache", {})
+    monkeypatch.setattr(
+        "hexlog.ui.vtt.QPixmap", lambda path: decoded.append(path) or FakePixmap()
+    )
+
+    first = load_pixmap_cached("map.png")
+    second = load_pixmap_cached("map.png")
+    assert first is second
+    assert decoded == ["map.png"]
+
+
+def test_pixmap_cache_memoizes_separate_paths(monkeypatch):
+    monkeypatch.setattr("hexlog.ui.vtt._pixmap_cache", {})
+    monkeypatch.setattr(
+        "hexlog.ui.vtt.QPixmap", lambda path: FakePixmap(path != "broken.png")
+    )
+
+    assert load_pixmap_cached("a.png") is not None
+    assert load_pixmap_cached("broken.png") is None
+    assert load_pixmap_cached("a.png") is not None
+
+
+def test_pixmap_cache_returns_none_for_unreadable_file(monkeypatch):
+    cache = {}
+    monkeypatch.setattr("hexlog.ui.vtt._pixmap_cache", cache)
+    monkeypatch.setattr("hexlog.ui.vtt.QPixmap", lambda path: FakePixmap(valid=False))
+
+    assert load_pixmap_cached("missing.png") is None
+    assert "missing.png" in cache
