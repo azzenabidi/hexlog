@@ -95,7 +95,25 @@ def load_data():
     # Backfill keys added in newer versions for compatibility with old files.
     for key in C.DEFAULT_DATA:
         data.setdefault(key, [])
+    _backfill_scene_tokens(data)
     return data, warnings
+
+
+def _backfill_scene_tokens(data) -> None:
+    """Add combat fields to scene tokens written before they existed.
+
+    Older scenes serialize tokens without an instance id or combat numbers;
+    a fresh id keeps the combat tracker able to distinguish duplicate tokens
+    of the same entity, and a token with a statblock starts at full HP.
+    """
+    for scene in data.get(C.SCENES, []):
+        for token in scene.get("tokens", []):
+            token.setdefault("id", C.new_id())
+            token.setdefault("max_hp", None)
+            token.setdefault("hp", token.get("max_hp"))
+            token.setdefault("initiative", None)
+            token.setdefault("conditions", [])
+            token.setdefault("is_active", False)
 
 
 def save_data(data: dict) -> None:

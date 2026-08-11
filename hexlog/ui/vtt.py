@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import constants as C
+from hexlog.combat import parse_hp
 from hexlog.ui.dialogs import confirm
 from hexlog.ui.theme import DARK_THEME, THEMES
 
@@ -56,6 +57,8 @@ def kind_label(kind):
         return "NPC"
     if kind == "location":
         return "Location"
+    if kind == "monster":
+        return "Monster"
     return "Character"
 
 
@@ -98,13 +101,23 @@ class TokenItem(QGraphicsRectItem):
     token's center exactly where the user clicked.
     """
 
-    def __init__(self, entity_id, kind, name, color, diameter=C.TOKEN_DIAMETER, image=None):
+    def __init__(self, entity_id, kind, name, color, diameter=C.TOKEN_DIAMETER, image=None,
+                 max_hp=None, hp=None, token_id=None, initiative=None,
+                 conditions=None, is_active=False):
         super().__init__(-diameter / 2, -diameter / 2, diameter, diameter)
+        self.id = token_id or C.new_id()  # unique per token instance
         self.entity_id = entity_id
         self.kind = kind
         self.name = name
         self.diameter = diameter
         self.image = image
+        # Combat state lives on the token (the single source of truth) and
+        # rides along in to_dict() so it persists with the scene.
+        self.max_hp = max_hp
+        self.hp = hp
+        self.initiative = initiative
+        self.conditions = conditions or []
+        self.is_active = is_active
         self._label = short_label(name)
         self._pixmap = None
         if image:
@@ -302,6 +315,7 @@ class TokenItem(QGraphicsRectItem):
     def to_dict(self):
         """Serialize the token's current state for scene persistence."""
         return {
+            "id": self.id,
             "entity_id": self.entity_id,
             "kind": self.kind,
             "name": self.name,
@@ -310,6 +324,11 @@ class TokenItem(QGraphicsRectItem):
             "y": self.pos().y(),
             "diameter": self.diameter,
             "image": self.image,
+            "max_hp": self.max_hp,
+            "hp": self.hp,
+            "initiative": self.initiative,
+            "conditions": self.conditions,
+            "is_active": self.is_active,
         }
 
 
@@ -463,6 +482,11 @@ class MapsTab(QWidget):
                 f"NPC: {npc.get('name', '?')} ({npc.get('role', '-')})",
                 dict(npc, kind="npc"),
             )
+        for monster in self.store[C.MONSTERS]:
+            self.entity_menu.addItem(
+                f"Monster: {monster.get('name', '?')} (CR {monster.get('cr', '-')})",
+                dict(monster, kind="monster"),
+            )
         # Restore the previous selection by value if it still exists.
         if current is not None:
             index = self.entity_menu.findData(current)
@@ -533,6 +557,12 @@ class MapsTab(QWidget):
             token.get("color", C.DEFAULT_ENTITY_COLOR),
             token.get("diameter", C.TOKEN_DIAMETER),
             image=token.get("image"),
+            max_hp=token.get("max_hp"),
+            hp=token.get("hp"),
+            token_id=token.get("id"),
+            initiative=token.get("initiative"),
+            conditions=token.get("conditions"),
+            is_active=token.get("is_active", False),
         )
         item.setPos(token.get("x", 0), token.get("y", 0))
         self.scene.addItem(item)
@@ -632,12 +662,15 @@ class MapsTab(QWidget):
 
     def place_token(self, entity, scene_pos):
         """Drop a new token for the given entity at the scene position."""
+        max_hp = parse_hp(entity.get("hp")) if entity.get("hp") else None
         item = TokenItem(
             entity["id"],
             entity.get("kind", "character"),
             entity["name"],
-            entity["color"],
+            entity.get("color", C.DEFAULT_ENTITY_COLOR),
             image=entity.get("image"),
+            max_hp=max_hp,
+            hp=max_hp,
         )
         item.setPos(scene_pos)
         self.scene.addItem(item)

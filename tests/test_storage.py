@@ -230,3 +230,30 @@ def test_does_not_migrate_when_subdir_data_already_exists(isolated_paths):
     migrate_legacy_data()
     with open(C.DATA_FILE) as fh:
         assert json.load(fh)["characters"] == [{"id": "new"}]
+
+
+def test_backfills_combat_fields_on_scene_tokens(isolated_paths):
+    from hexlog.storage import load_data, save_data
+
+    token = {"entity_id": "e1", "kind": "monster", "name": "Orc", "max_hp": 15}
+    save_data({"scenes": [{"id": "s1", "name": "Cave", "map_path": None, "tokens": [token]}]})
+
+    data, _ = load_data()
+    loaded = data["scenes"][0]["tokens"][0]
+    assert loaded["id"]
+    assert loaded["hp"] == 15
+    assert loaded["initiative"] is None
+    assert loaded["conditions"] == []
+    assert loaded["is_active"] is False
+
+
+def test_backfill_preserves_tokens_without_a_statblock(isolated_paths):
+    from hexlog.storage import load_data, save_data
+
+    token = {"entity_id": "e1", "kind": "character", "name": "Jorbin"}
+    save_data({"scenes": [{"id": "s1", "name": "Cave", "map_path": None, "tokens": [token]}]})
+
+    data, _ = load_data()
+    loaded = data["scenes"][0]["tokens"][0]
+    assert loaded["max_hp"] is None
+    assert loaded["hp"] is None
