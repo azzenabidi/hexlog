@@ -32,7 +32,13 @@ For local development:
 
 ## Production
 
-Grab the latest AppImage from the [releases page](https://github.com/azzenabidi/hexlog/releases), then run it:
+Grab the latest AppImage from the [releases page](https://github.com/azzenabidi/hexlog/releases). The easiest way for a first-time install is to run the bundled installer — it copies the AppImage to `~/.local/bin/hexlog` and registers it in your application menu:
+
+```bash
+./install.sh ~/Downloads/hexlog-*.AppImage
+```
+
+Or skip the installer and run the AppImage directly:
 
 ```bash
 chmod +x hexlog-*.AppImage
