@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QTextEdit,
+    QTextBrowser,
     QVBoxLayout,
 )
 
@@ -112,12 +112,11 @@ class UpdateDialog(QDialog):
         self.progress.setTextVisible(True)
         root.addWidget(self.progress)
 
-        self.notes_edit = QTextEdit()
-        self.notes_edit.setReadOnly(True)
-        self.notes_edit.setOpenExternalLinks(True)
-        self.notes_edit.setMinimumHeight(240)
-        self.notes_edit.setVisible(False)
-        root.addWidget(self.notes_edit, 1)
+        self.notes_browser = QTextBrowser()
+        self.notes_browser.setOpenExternalLinks(True)
+        self.notes_browser.setMinimumHeight(240)
+        self.notes_browser.setVisible(False)
+        root.addWidget(self.notes_browser, 1)
 
         buttons = QHBoxLayout()
         self.update_btn = QPushButton("Download & Update")
@@ -159,8 +158,8 @@ class UpdateDialog(QDialog):
         self.status_label.setText(f"Hexlog {current} is installed.")
         self.release_heading.setText(f"Hexlog {release.tag} is available")
         self.release_meta.setText(self._release_meta(release))
-        self.notes_edit.setHtml(render_markdown(release.notes))
-        for widget in (self.release_heading, self.release_meta, self.notes_edit, self.update_btn):
+        self.notes_browser.setHtml(render_markdown(release.notes))
+        for widget in (self.release_heading, self.release_meta, self.notes_browser, self.update_btn):
             widget.setVisible(True)
 
     def _release_meta(self, release):
@@ -233,8 +232,7 @@ class ReleaseNotesDialog(QDialog):
         heading = QLabel("What's new in this release")
         heading.setObjectName("heading")
         root.addWidget(heading)
-        text = QTextEdit()
-        text.setReadOnly(True)
+        text = QTextBrowser()
         text.setOpenExternalLinks(True)
         text.setHtml(render_markdown(notes))
         root.addWidget(text, 1)
