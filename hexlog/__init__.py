@@ -11,4 +11,4 @@ development, prod for the packaged AppImage; both hold data.json, maps/, tokens/
 Run the application with:  python -m hexlog
 """
 
-__version__ = "0.6.3"
+__version__ = "0.6.4"
