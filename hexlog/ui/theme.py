@@ -87,7 +87,7 @@ QGroupBox::title {
     padding: 0 4px;
     color: $window_text;
 }
-QLineEdit, QPlainTextEdit, QComboBox {
+QLineEdit, QPlainTextEdit, QTextEdit, QComboBox {
     background-color: $input_bg;
     border: 1px solid $input_border;
     border-radius: 6px;
@@ -96,10 +96,10 @@ QLineEdit, QPlainTextEdit, QComboBox {
     selection-background-color: $input_selection_bg;
     selection-color: $input_selection_text;
 }
-QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus {
     border: 1px solid $focus_border;
 }
-QLineEdit:disabled, QPlainTextEdit:disabled {
+QLineEdit:disabled, QPlainTextEdit:disabled, QTextEdit:disabled {
     color: $button_disabled_text;
 }
 QComboBox::drop-down {
@@ -258,6 +258,9 @@ QScrollArea {
 }
 QScrollArea > QWidget > QWidget {
     background-color: transparent;
+}
+QTextEdit a, QLabel a {
+    color: $accent;
 }
 """)
 

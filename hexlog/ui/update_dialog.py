@@ -2,8 +2,11 @@
 
 UpdateDialog owns the network work (on background QThreads), the progress
 bar, and the decision to relaunch the AppImage; every mechanical step lives
-in hexlog.updater so it stays testable without Qt. ReleaseNotesDialog shows
-the notes of an applied update after the restarted app comes back up.
+in hexlog.updater so it stays testable without Qt. When a newer release is
+found the dialog shows a release card - version, published date, download
+size, and the release notes rendered as formatted markdown - instead of a
+bare link. ReleaseNotesDialog shows the notes of an applied update after
+the restarted app comes back up.
 """
 
 import os
@@ -21,10 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import __version__, constants as C
+from hexlog.markdown import render_markdown
 from hexlog.updater import (
     RELEASES_URL,
     appimage_path,
     download_to,
+    format_size,
     is_newer,
     latest_release,
     open_url,
@@ -79,7 +84,7 @@ class UpdateDialog(QDialog):
     def __init__(self, parent=None, opener=None):
         super().__init__(parent)
         self.setWindowTitle("Check for Updates")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(480)
         self._opener = opener or open_url
         self._release = None
         self._thread = None
@@ -87,7 +92,20 @@ class UpdateDialog(QDialog):
         root = QVBoxLayout(self)
         self.status_label = QLabel("Checking for updates...")
         self.status_label.setWordWrap(True)
+        self.status_label.setOpenExternalLinks(True)
         root.addWidget(self.status_label)
+
+        self.release_heading = QLabel("")
+        self.release_heading.setObjectName("heading")
+        self.release_heading.setVisible(False)
+        root.addWidget(self.release_heading)
+
+        self.release_meta = QLabel("")
+        self.release_meta.setWordWrap(True)
+        self.release_meta.setTextFormat(Qt.TextFormat.RichText)
+        self.release_meta.setOpenExternalLinks(True)
+        self.release_meta.setVisible(False)
+        root.addWidget(self.release_meta)
 
         self.progress = QProgressBar()
         self.progress.setTextVisible(True)
@@ -95,9 +113,10 @@ class UpdateDialog(QDialog):
 
         self.notes_edit = QTextEdit()
         self.notes_edit.setReadOnly(True)
+        self.notes_edit.setOpenExternalLinks(True)
+        self.notes_edit.setMinimumHeight(240)
         self.notes_edit.setVisible(False)
-        self.notes_edit.setMinimumHeight(220)
-        root.addWidget(self.notes_edit)
+        root.addWidget(self.notes_edit, 1)
 
         buttons = QHBoxLayout()
         self.update_btn = QPushButton("Download & Update")
@@ -124,19 +143,32 @@ class UpdateDialog(QDialog):
         self.progress.setRange(0, 100)
         self._release = release
         if release is None or not release.appimage_url:
-            self.status_label.setText("The latest release has no AppImage to download.")
+            self.status_label.setText(
+                "The latest release has no AppImage to download. "
+                f'<a href="{C.GITHUB_URL}/releases/latest">See the release on GitHub.</a>'
+            )
             return
         current = __version__
         if not is_newer(release.tag, current):
             self.status_label.setText(f"You're up to date (Hexlog {current}).")
             return
-        self.status_label.setText(
-            f"Hexlog {current} is installed.\n"
-            f"A newer build, {release.tag}, is available."
-        )
-        self.notes_edit.setPlainText(release.notes)
-        self.notes_edit.setVisible(True)
-        self.update_btn.setVisible(True)
+        self.status_label.setText(f"Hexlog {current} is installed.")
+        self.release_heading.setText(f"Hexlog {release.tag} is available")
+        self.release_meta.setText(self._release_meta(release))
+        self.notes_edit.setHtml(render_markdown(release.notes))
+        for widget in (self.release_heading, self.release_meta, self.notes_edit, self.update_btn):
+            widget.setVisible(True)
+
+    def _release_meta(self, release):
+        """Meta line for the release card: date, size, and the release page."""
+        parts = []
+        if release.published_at:
+            parts.append(f"Released {release.published_at[:10]}")
+        if release.size:
+            parts.append(format_size(release.size))
+        if release.html_url:
+            parts.append(f'<a href="{release.html_url}">open release page</a>')
+        return "  ·  ".join(parts)
 
     def _on_failed(self, message):
         self.progress.setRange(0, 100)
@@ -148,7 +180,8 @@ class UpdateDialog(QDialog):
         if not target or self._release is None:
             self.status_label.setText(
                 "This copy of Hexlog was not installed as an AppImage, so it "
-                f"can't update itself. Download the latest build from {C.GITHUB_URL}."
+                f'can\'t update itself. Download the latest build from '
+                f'<a href="{C.GITHUB_URL}">{C.GITHUB_URL}</a>.'
             )
             return
         self.update_btn.setEnabled(False)
@@ -191,13 +224,15 @@ class ReleaseNotesDialog(QDialog):
     def __init__(self, parent=None, notes=""):
         super().__init__(parent)
         self.setWindowTitle("Hexlog has been updated")
-        self.resize(520, 420)
+        self.resize(540, 460)
         root = QVBoxLayout(self)
-        heading = QLabel("What's new in this release:")
+        heading = QLabel("What's new in this release")
+        heading.setObjectName("heading")
         root.addWidget(heading)
         text = QTextEdit()
         text.setReadOnly(True)
-        text.setPlainText(notes)
+        text.setOpenExternalLinks(True)
+        text.setHtml(render_markdown(notes))
         root.addWidget(text, 1)
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)

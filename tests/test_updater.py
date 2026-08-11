@@ -9,6 +9,7 @@ from hexlog import constants as C
 from hexlog.updater import (
     appimage_path,
     download_to,
+    format_size,
     is_newer,
     latest_release,
     load_and_clear_release_notes,
@@ -76,18 +77,43 @@ def test_is_newer_compares_tuples():
 def test_latest_release_finds_the_appimage_asset():
     payload = {
         "tag_name": "v0.5.0",
+        "name": "Hexlog 0.5.0",
         "body": "What's new.",
+        "published_at": "2026-08-11T09:00:00Z",
+        "html_url": "https://example.test/releases/v0.5.0",
         "assets": [
             {"name": "hexlog-0.5.0-x86_64.AppImage",
-             "browser_download_url": "https://example.test/hexlog-0.5.0.AppImage"},
+             "browser_download_url": "https://example.test/hexlog-0.5.0.AppImage",
+             "size": 90_000_000},
         ],
     }
     opener = FakeOpener(FakeResponse(json.dumps(payload).encode()))
     release = latest_release("https://api.example.test/latest", opener)
     assert opener.urls == ["https://api.example.test/latest"]
     assert release.tag == "v0.5.0"
+    assert release.name == "Hexlog 0.5.0"
     assert release.notes == "What's new."
+    assert release.published_at == "2026-08-11T09:00:00Z"
+    assert release.html_url == "https://example.test/releases/v0.5.0"
     assert release.appimage_url == "https://example.test/hexlog-0.5.0.AppImage"
+    assert release.size == 90_000_000
+
+
+def test_latest_release_defaults_missing_metadata():
+    payload = {"tag_name": "v0.5.0", "body": "", "assets": []}
+    release = latest_release(
+        "https://api.example.test/latest", FakeOpener(FakeResponse(json.dumps(payload).encode()))
+    )
+    assert release.name == "v0.5.0"
+    assert release.published_at == ""
+    assert release.html_url == ""
+    assert release.size == 0
+
+
+def test_format_size_is_human_friendly():
+    assert format_size(90 * 1024 * 1024) == "90 MB"
+    assert format_size(5 * 1024 * 1024) == "5.0 MB"
+    assert format_size(0) == "0.0 MB"
 
 
 def test_latest_release_returns_none_without_an_appimage_asset():

@@ -53,8 +53,12 @@ class Release:
     """The latest release as reported by the GitHub API."""
 
     tag: str
+    name: str
     notes: str
+    published_at: str
+    html_url: str
     appimage_url: str | None
+    size: int = 0
 
 
 def latest_release(releases_url, opener):
@@ -67,15 +71,30 @@ def latest_release(releases_url, opener):
     payload = json.load(opener(releases_url))
     if not isinstance(payload, dict) or "tag_name" not in payload:
         raise ValueError(f"Unexpected releases response: {payload}")
-    asset_url = next(
+    asset = next(
         (
-            asset.get("browser_download_url")
-            for asset in payload.get("assets", [])
-            if APPIMAGE_PATTERN.search(asset.get("name", ""))
+            a for a in payload.get("assets", [])
+            if APPIMAGE_PATTERN.search(a.get("name", ""))
         ),
         None,
     )
-    return Release(payload["tag_name"], payload.get("body", ""), asset_url)
+    return Release(
+        payload["tag_name"],
+        payload.get("name") or payload["tag_name"],
+        payload.get("body", ""),
+        payload.get("published_at", ""),
+        payload.get("html_url", ""),
+        asset.get("browser_download_url") if asset else None,
+        int(asset.get("size") or 0) if asset else 0,
+    )
+
+
+def format_size(num_bytes):
+    """Human-friendly download size like '89 MB'."""
+    mb = num_bytes / (1024 * 1024)
+    if mb < 10:
+        return f"{mb:.1f} MB"
+    return f"{int(round(mb))} MB"
 
 
 def download_to(url, dest_path, opener, progress=None):
