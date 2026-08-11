@@ -5,9 +5,9 @@ releases API for a newer build, download the AppImage asset, and atomically
 replace the running file: the AppImage runtime runs from a mounted copy, so
 overwriting the original on disk is safe while it is executing. The new
 binary is made executable, the applied release's notes are stashed in the
-data dir for the relaunched app to show, and the caller is handed a restart
-command. All network and file work lives here as plain functions so it can
-be tested without Qt or a running app; the dialog owns the threads.
+data dir for the relaunched app to show, and the caller relaunches the
+AppImage itself. All network and file work lives here as plain functions so
+it can be tested without Qt or a running app; the dialog owns the threads.
 """
 
 import json
@@ -130,11 +130,6 @@ def replace_appimage(new_file, target):
     """Make `new_file` executable and atomically move it over `target`."""
     os.chmod(new_file, 0o755)
     os.replace(new_file, target)
-
-
-def restart_command(environ=None):
-    """The command that relaunches the installed AppImage."""
-    return [appimage_path(environ)]
 
 
 def save_release_notes(text):

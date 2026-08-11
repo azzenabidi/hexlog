@@ -9,6 +9,7 @@ import copy
 import json
 import os
 import shutil
+import uuid
 
 from hexlog import constants as C
 
@@ -131,6 +132,20 @@ def save_data(data: dict) -> None:
     if os.path.exists(C.DATA_FILE):
         shutil.copy2(C.DATA_FILE, C.DATA_FILE + ".bak")
     os.replace(tmp_file, C.DATA_FILE)
+
+
+def import_image(source_path, target_dir):
+    """Copy an image under a fresh random basename, returning its file name.
+
+    The random basename keeps identically named files from colliding, and
+    None is returned when the copy fails so the caller can surface the error.
+    """
+    dest_name = f"{uuid.uuid4().hex[:8]}{os.path.splitext(source_path)[1]}"
+    try:
+        shutil.copy(source_path, os.path.join(target_dir, dest_name))
+    except OSError:
+        return None
+    return dest_name
 
 
 def next_color(entities) -> str:

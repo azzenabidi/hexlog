@@ -6,8 +6,6 @@ gets persisted the moment you pause.
 """
 
 import os
-import shutil
-import uuid
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QPixmap, QShortcut
@@ -29,8 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import constants as C
-from hexlog.storage import next_color
-from hexlog.ui.dialogs import confirm
+from hexlog.storage import import_image, next_color
+from hexlog.ui.dialogs import add_hint_item, confirm
 from hexlog.validation import validate_name
 
 
@@ -168,14 +166,12 @@ class EntityTab(QWidget):
             self.entity_list.addItem(item)
         if self.entity_list.count() == 0:
             if query:
-                hint = QListWidgetItem("No matches for the current filter.")
+                add_hint_item(self.entity_list, "No matches for the current filter.")
             else:
-                hint = QListWidgetItem(
-                    f"No {self.entity_label.lower()}s yet - click New {self.entity_label}."
+                add_hint_item(
+                    self.entity_list,
+                    f"No {self.entity_label.lower()}s yet - click New {self.entity_label}.",
                 )
-            hint.setFlags(Qt.ItemFlag.NoItemFlags)  # purely decorative
-            hint.setForeground(QColor(C.HINT_TEXT_COLOR))
-            self.entity_list.addItem(hint)
         self.entity_list.blockSignals(False)
         # Auto-select the first item only when nothing is selected yet, so an
         # in-progress new-entity form isn't hijacked by a refresh.
@@ -351,19 +347,16 @@ class EntityTab(QWidget):
             return  # cancelled - never create a draft for a dismissed dialog
         if self.current_id is None:
             self._ensure()  # a draft is fine once an image is actually chosen
-        ext = os.path.splitext(path)[1]
-        dest = os.path.join(C.TOKENS_DIR, f"{uuid.uuid4().hex[:8]}{ext}")
-        try:
-            shutil.copy(path, dest)
-        except OSError:
+        image_name = import_image(path, C.TOKENS_DIR)
+        if image_name is None:
             # Surface the failure rather than silently dropping the choice.
             QMessageBox.warning(
                 self, C.APP_NAME, "Could not copy the image into the app data folder."
             )
             return
         entity = self._find(self.current_id)
-        entity["image"] = os.path.basename(dest)
-        self.image_name = os.path.basename(dest)
+        entity["image"] = image_name
+        self.image_name = image_name
         self._update_image_label()
         self.on_change()
 

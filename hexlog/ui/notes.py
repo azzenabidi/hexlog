@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from hexlog import constants as C
 from hexlog.dice import MODE_LABELS, roll
-from hexlog.ui.dialogs import confirm
+from hexlog.ui.dialogs import add_hint_item, confirm
 
 
 def mention_pattern(name):
@@ -40,13 +40,11 @@ def dialogue_caret_offset(name):
     return len(f"\n{name}: \"")
 
 
-def referenced_ids(entities, text):
-    """Ids of entities whose name appears in the note text (whole-word match).
-
-    Uses the same word-boundary rule as MentionHighlighter so the stored
-    references and the visual highlighting never disagree.
-    """
-    return [e["id"] for e in entities if e.get("name") and mention_pattern(e["name"]).search(text)]
+def note_label(note):
+    """Compact list label for a note: 'timestamp  title' (or 'Untitled')."""
+    stamp = note.get("timestamp", "")
+    title = note.get("title") or "Untitled"
+    return f"{stamp}  {title}"
 
 
 def notes_mentioning(notes, entity):
@@ -240,26 +238,14 @@ class NotesTab(QWidget):
         self.refresh_mention_bar()
         self.refresh_note_list()
         self.highlighter.rehighlight()
-        self._rescan_references()
 
     def _schedule_rehighlight(self):
         """Restart the debounce timer after a keystroke."""
         self._scan_timer.start()
 
     def _on_rehighlight_due(self):
-        """Run once typing pauses: refresh highlights and stored references."""
+        """Run once typing pauses: refresh the mention highlights."""
         self.highlighter.rehighlight()
-        self._rescan_references()
-
-    def _rescan_references(self):
-        """Recompute the @mention references stored on the note being edited."""
-        note = self._find_note(self.current_note_id) if self.current_note_id else None
-        if note is None:
-            return
-        text = self.editor.toPlainText()
-        note["char_ids"] = referenced_ids(self.store[C.CHARACTERS], text)
-        note["npc_ids"] = referenced_ids(self.store[C.NPCS], text)
-        note["loc_ids"] = referenced_ids(self.store[C.LOCATIONS], text)
 
     def refresh_mention_bar(self):
         """Rebuild the entity dropdown for dialogue/@mention insertion."""
@@ -294,30 +280,22 @@ class NotesTab(QWidget):
     def _selected_name(self):
         return self.mention_combo.currentData()
 
-    def _note_text(self, note):
-        stamp = note.get("timestamp", "")
-        title = note.get("title") or "Untitled"
-        return f"{stamp}  {title}"
-
     def refresh_note_list(self):
         """Rebuild the note list, honoring the filter and current selection."""
         self.note_list.blockSignals(True)
         self.note_list.clear()
         query = self.filter_edit.text().strip().lower()
         for note in self.store[C.NOTES]:
-            if query and query not in self._note_text(note).lower():
+            if query and query not in note_label(note).lower():
                 continue
-            item = QListWidgetItem(self._note_text(note))
+            item = QListWidgetItem(note_label(note))
             item.setData(Qt.ItemDataRole.UserRole, note["id"])
             self.note_list.addItem(item)
         if self.note_list.count() == 0:
             if query:
-                hint = QListWidgetItem("No matches for the current filter.")
+                add_hint_item(self.note_list, "No matches for the current filter.")
             else:
-                hint = QListWidgetItem("No notes yet - click New Note.")
-            hint.setFlags(Qt.ItemFlag.NoItemFlags)
-            hint.setForeground(QColor(C.HINT_TEXT_COLOR))
-            self.note_list.addItem(hint)
+                add_hint_item(self.note_list, "No notes yet - click New Note.")
         self.note_list.blockSignals(False)
         if self.current_note_id is not None:
             index = self._note_index(self.current_note_id)
@@ -330,7 +308,7 @@ class NotesTab(QWidget):
         for i in range(self.note_list.count()):
             item = self.note_list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == note["id"]:
-                item.setText(self._note_text(note))
+                item.setText(note_label(note))
                 return
 
     def _note_index(self, note_id):
@@ -343,11 +321,7 @@ class NotesTab(QWidget):
         return self.store.find(C.NOTES, note_id)
 
     def _autosave(self):
-        """Persist the current note (creating it on first keystroke).
-
-        Reference ids are left for _rescan_references(), which runs on the
-        debounce timer; scanning on every keystroke here is O(text x entities).
-        """
+        """Persist the current note (creating it on first keystroke)."""
         if self._syncing:
             return
         note = self._ensure_note()
@@ -402,9 +376,6 @@ class NotesTab(QWidget):
             "title": "",
             "text": "",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "char_ids": [],
-            "npc_ids": [],
-            "loc_ids": [],
         }
         self.store.prepend(C.NOTES, note)  # newest note first
         self.current_note_id = note["id"]

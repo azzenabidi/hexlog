@@ -1,8 +1,6 @@
 """Virtual tabletop: token items, the map view, and scene management."""
 
 import os
-import shutil
-import uuid
 
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import (
@@ -36,8 +34,9 @@ from PySide6.QtWidgets import (
 
 from hexlog import constants as C
 from hexlog.combat import parse_hp
+from hexlog.storage import import_image
 from hexlog.ui.combat_panel import CombatPanel
-from hexlog.ui.dialogs import confirm
+from hexlog.ui.dialogs import add_hint_item, confirm
 from hexlog.ui.theme import DARK_THEME, THEMES
 
 
@@ -529,10 +528,7 @@ class MapsTab(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, scene["id"])
             self.scene_list.addItem(item)
         if self.scene_list.count() == 0:
-            hint = QListWidgetItem("No scenes yet - click New Scene.")
-            hint.setFlags(Qt.ItemFlag.NoItemFlags)
-            hint.setForeground(QColor(C.HINT_TEXT_COLOR))
-            self.scene_list.addItem(hint)
+            add_hint_item(self.scene_list, "No scenes yet - click New Scene.")
         self.scene_list.blockSignals(False)
         if self.current_scene_id is not None:
             index = self._scene_index(self.current_scene_id)
@@ -655,18 +651,15 @@ class MapsTab(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Choose map image", "", C.IMAGE_FILTER)
         if not path:
             return
-        # Random basename avoids collisions between identically named files.
-        dest = os.path.join(C.MAPS_DIR, f"{uuid.uuid4().hex[:8]}{os.path.splitext(path)[1]}")
-        try:
-            shutil.copy(path, dest)
-        except OSError:
+        map_name = import_image(path, C.MAPS_DIR)
+        if map_name is None:
             # Surface the failure rather than leaving the scene half-updated.
             QMessageBox.warning(
                 self, C.APP_NAME, "Could not copy the map image into the app data folder."
             )
             return
         scene = self._find_scene(self.current_scene_id)
-        scene["map_path"] = os.path.basename(dest)
+        scene["map_path"] = map_name
         self.refresh_scene_view()
         self._fit_view()
         self.on_change()

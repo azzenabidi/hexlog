@@ -33,12 +33,13 @@ def save_error_message(error):
 def flush_and_report(store, notify):
     """Persist `store`, reporting failures through `notify`.
 
-    A disk-full or permission error must not raise inside a Qt timer slot,
-    where nothing could catch it. Returns True when the save succeeded.
+    A disk-full, permission, or serialization error must not raise inside a
+    Qt timer slot, where nothing could catch it. Returns True when the save
+    succeeded.
     """
     try:
         store.save()
-    except OSError as error:
+    except (OSError, TypeError) as error:
         notify(save_error_message(error))
         return False
     return True

@@ -27,45 +27,56 @@ def _inline(text):
     return text
 
 
+def _close_list(out, list_tag):
+    """Emit the closing tag for an open list, returning the cleared state."""
+    if list_tag:
+        out.append(f"</{list_tag}>")
+    return None
+
+
+def _heading_html(line):
+    """HTML for an ATX heading line, or None if it is not a heading."""
+    match = _HEADING.match(line)
+    if match is None:
+        return None
+    level = len(match.group(1))
+    return f"<h{level}>{_inline(match.group(2))}</h{level}>"
+
+
+def _append_list_item(out, list_tag, tag, text):
+    """Emit an <li>, opening the `tag` list wrapper when it changes."""
+    if list_tag != tag:
+        if list_tag:
+            out.append(f"</{list_tag}>")
+        out.append(f"<{tag}>")
+    out.append(f"<li>{_inline(text)}</li>")
+    return tag
+
+
 def render_markdown(text):
     """Convert `text` into an HTML fragment suitable for QTextEdit.setHtml."""
     out = []
     list_tag = None  # "ul", "ol", or None while grouping consecutive items
 
-    def close_list():
-        nonlocal list_tag
-        if list_tag:
-            out.append(f"</{list_tag}>")
-            list_tag = None
-
     for raw in text.splitlines():
         line = raw.rstrip()
         stripped = line.strip()
         if not stripped:
-            close_list()
+            list_tag = _close_list(out, list_tag)
             continue
-        match = _HEADING.match(line)
-        if match:
-            close_list()
-            level = len(match.group(1))
-            out.append(f"<h{level}>{_inline(match.group(2))}</h{level}>")
+        heading = _heading_html(line)
+        if heading is not None:
+            list_tag = _close_list(out, list_tag)
+            out.append(heading)
             continue
         if stripped.startswith("- "):
-            if list_tag != "ul":
-                close_list()
-                out.append("<ul>")
-                list_tag = "ul"
-            out.append(f"<li>{_inline(stripped[2:])}</li>")
+            list_tag = _append_list_item(out, list_tag, "ul", stripped[2:])
             continue
         match = _ORDERED.match(stripped)
         if match:
-            if list_tag != "ol":
-                close_list()
-                out.append("<ol>")
-                list_tag = "ol"
-            out.append(f"<li>{_inline(match.group(2))}</li>")
+            list_tag = _append_list_item(out, list_tag, "ol", match.group(2))
             continue
-        close_list()
+        list_tag = _close_list(out, list_tag)
         out.append(f"<p>{_inline(stripped)}</p>")
-    close_list()
+    _close_list(out, list_tag)
     return "\n".join(out)

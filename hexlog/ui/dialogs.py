@@ -1,7 +1,18 @@
 """Shared dialog helpers for the Hexlog UI."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QListWidgetItem, QMessageBox
+
+from hexlog import constants as C
+
+
+def add_hint_item(list_widget, text):
+    """Append a non-selectable placeholder row to a list widget."""
+    item = QListWidgetItem(text)
+    item.setFlags(Qt.ItemFlag.NoItemFlags)
+    item.setForeground(QColor(C.HINT_TEXT_COLOR))
+    list_widget.addItem(item)
 
 
 def confirm(parent, title, text):

@@ -6,7 +6,6 @@ each entry. The dialog is read-only, so browsing can never clobber a note.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -20,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from hexlog import constants as C
-from hexlog.ui.notes import notes_mentioning
+from hexlog.ui.dialogs import add_hint_item
+from hexlog.ui.notes import note_label, notes_mentioning
 
 
 def entity_items(store):
@@ -111,7 +111,7 @@ class KnownDialog(QDialog):
         self.note_list.blockSignals(True)
         self.note_list.clear()
         for note in matches:
-            item = QListWidgetItem(self._note_text(note))
+            item = QListWidgetItem(note_label(note))
             item.setData(Qt.ItemDataRole.UserRole, note["id"])
             self.note_list.addItem(item)
         self.note_list.blockSignals(False)
@@ -121,19 +121,11 @@ class KnownDialog(QDialog):
             self._set_hint("No notes mention this entity.")
             self.preview.clear()
 
-    def _note_text(self, note):
-        stamp = note.get("timestamp", "")
-        title = note.get("title") or "Untitled"
-        return f"{stamp}  {title}"
-
     def _set_hint(self, text):
         """Show `text` as a non-selectable placeholder row in the timeline."""
         self.note_list.blockSignals(True)
         self.note_list.clear()
-        hint = QListWidgetItem(text)
-        hint.setFlags(Qt.ItemFlag.NoItemFlags)
-        hint.setForeground(QColor(C.HINT_TEXT_COLOR))
-        self.note_list.addItem(hint)
+        add_hint_item(self.note_list, text)
         self.note_list.blockSignals(False)
 
     def _on_note_changed(self, current, _previous):
@@ -144,5 +136,5 @@ class KnownDialog(QDialog):
         if note is None:
             return
         self.preview.setPlainText(
-            f"{self._note_text(note)}\n\n{note.get('text', '')}"
+            f"{note_label(note)}\n\n{note.get('text', '')}"
         )

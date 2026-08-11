@@ -15,7 +15,6 @@ from hexlog.updater import (
     load_and_clear_release_notes,
     parse_version,
     replace_appimage,
-    restart_command,
     save_release_notes,
 )
 
@@ -151,10 +150,6 @@ def test_download_to_raises_on_a_short_read(tmp_path):
 def test_appimage_path_reads_the_environment():
     assert appimage_path({"APPIMAGE": "/opt/hexlog.AppImage"}) == "/opt/hexlog.AppImage"
     assert appimage_path({}) is None
-
-
-def test_restart_command_targets_the_appimage():
-    assert restart_command({"APPIMAGE": "/opt/hexlog.AppImage"}) == ["/opt/hexlog.AppImage"]
 
 
 def test_replace_appimage_makes_executable_and_atomic(tmp_path):

@@ -34,6 +34,8 @@ from hexlog.combat import (
     toggle_condition,
 )
 
+from hexlog.ui.dialogs import add_hint_item
+
 
 class CombatPanel(QWidget):
     """Bottom pane of the VTT tab.
@@ -117,10 +119,7 @@ class CombatPanel(QWidget):
                 item.setForeground(QColor(C.SELECTION_COLOR))
             self.combat_list.addItem(item)
         if not self._order:
-            hint = QListWidgetItem("Place tokens, then Start Combat.")
-            hint.setFlags(Qt.ItemFlag.NoItemFlags)
-            hint.setForeground(QColor(C.HINT_TEXT_COLOR))
-            self.combat_list.addItem(hint)
+            add_hint_item(self.combat_list, "Place tokens, then Start Combat.")
         self.combat_list.blockSignals(False)
         self._select_id(selected_id)
         self._update_controls()

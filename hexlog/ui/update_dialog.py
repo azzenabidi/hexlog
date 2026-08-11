@@ -10,6 +10,7 @@ the restarted app comes back up.
 """
 
 import os
+import uuid
 
 from PySide6.QtCore import QProcess, Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -70,7 +71,8 @@ class _DownloadThread(QThread):
 
     def run(self):
         try:
-            temp = os.path.join(os.path.dirname(self._target), ".hexlog-update.download")
+            unique = f".hexlog-update.{uuid.uuid4().hex[:8]}.download"
+            temp = os.path.join(os.path.dirname(self._target), unique)
             download_to(self._url, temp, self._opener, self.progress.emit)
             replace_appimage(temp, self._target)
             self.applied.emit()
@@ -214,10 +216,36 @@ class UpdateDialog(QDialog):
 
     def _on_applied(self):
         if self._release is not None:
-            save_release_notes(self._release.notes)
+            try:
+                save_release_notes(self._release.notes)
+            except OSError:
+                pass  # notes are a nicety; the update itself already succeeded
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "flush"):
+            parent.flush()  # persist anything still inside the autosave debounce
+        if not QProcess.startDetached(appimage_path()):
+            self.status_label.setText(
+                "Update applied, but Hexlog could not restart. "
+                "Please relaunch it manually."
+            )
+            self.update_btn.setEnabled(True)
+            self.close_btn.setEnabled(True)
+            return
+        if self._thread is not None:
+            self._thread.wait()
         self.status_label.setText("Update applied. Restarting Hexlog...")
-        QProcess.startDetached(appimage_path())
         QApplication.instance().quit()
+
+    def closeEvent(self, event):
+        if self._thread is not None and self._thread.isRunning():
+            event.ignore()
+            return
+        super().closeEvent(event)
+
+    def reject(self):
+        if self._thread is not None and self._thread.isRunning():
+            return
+        super().reject()
 
 
 class ReleaseNotesDialog(QDialog):

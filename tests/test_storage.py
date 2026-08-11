@@ -257,3 +257,26 @@ def test_backfill_preserves_tokens_without_a_statblock(isolated_paths):
     loaded = data["scenes"][0]["tokens"][0]
     assert loaded["max_hp"] is None
     assert loaded["hp"] is None
+
+
+def test_import_image_copies_under_a_random_basename(tmp_path):
+    from hexlog.storage import import_image
+
+    source = tmp_path / "photo.png"
+    source.write_bytes(b"\x89PNG")
+    target = tmp_path / "tokens"
+    target.mkdir()
+
+    name = import_image(str(source), str(target))
+    assert name is not None
+    assert name.endswith(".png")
+    assert (target / name).read_bytes() == b"\x89PNG"
+
+
+def test_import_image_returns_none_when_copy_fails(tmp_path):
+    from hexlog.storage import import_image
+
+    source = tmp_path / "photo.png"
+    source.write_bytes(b"x")
+
+    assert import_image(str(source), str(tmp_path / "missing")) is None

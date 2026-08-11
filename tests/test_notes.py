@@ -4,22 +4,18 @@ from hexlog.ui.notes import (
     MentionHighlighter,
     dialogue_caret_offset,
     mention_pattern,
+    note_label,
     notes_mentioning,
-    referenced_ids,
 )
 
 
-def test_referenced_matches_whole_words_only():
-    entities = [{"id": "1", "name": "Cat"}, {"id": "2", "name": "Goblin King"}]
-    assert referenced_ids(entities, "The Cat sat down.") == ["1"]
-    assert referenced_ids(entities, "A category of goblins.") == []
-    assert referenced_ids(entities, "Goblin King rules.") == ["2"]
-    assert referenced_ids(entities, "nothing here") == []
+def test_note_label_shows_timestamp_and_title():
+    note = {"id": "n1", "timestamp": "2026-08-01 09:00", "title": "Meet"}
+    assert note_label(note) == "2026-08-01 09:00  Meet"
 
 
-def test_referenced_ignores_unnamed_entities():
-    entities = [{"id": "1", "name": ""}, {"id": "2", "name": "Marc"}]
-    assert referenced_ids(entities, "Marc") == ["2"]
+def test_note_label_defaults_to_untitled():
+    assert note_label({"id": "n1", "timestamp": ""}) == "  Untitled"
 
 
 def test_mention_pattern_uses_word_boundaries():
