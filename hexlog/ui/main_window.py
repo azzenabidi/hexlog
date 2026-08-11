@@ -18,6 +18,7 @@ from hexlog.storage import Store
 from hexlog.ui.entities import CharactersTab, LocationsTab, MonsterTab, NPCsTab
 from hexlog.ui.notes import NotesTab
 from hexlog.ui.oracle_dialog import OracleDialog
+from hexlog.ui.stats_dialog import StatsDialog
 from hexlog.ui.theme import get_theme_stylesheet, toggle_theme_name
 from hexlog.ui.update_dialog import ReleaseNotesDialog, UpdateDialog
 from hexlog.ui.vtt import MapsTab
@@ -115,6 +116,9 @@ class MainWindow(QMainWindow):
         update_action = QAction("&Check for Updates…", self)
         update_action.triggered.connect(self._check_for_updates)
         menu.addAction(update_action)
+        stats_action = QAction("Nerd &Stats", self)
+        stats_action.triggered.connect(self._show_nerd_stats)
+        menu.addAction(stats_action)
         about_action = QAction("About Hexlog", self)
         about_action.triggered.connect(self._show_about)
         menu.addAction(about_action)
@@ -122,6 +126,10 @@ class MainWindow(QMainWindow):
     def _check_for_updates(self):
         """Open the update dialog, which may download and restart the app."""
         UpdateDialog(self).exec()
+
+    def _show_nerd_stats(self):
+        """Show codebase statistics in a dialog."""
+        StatsDialog(self).exec()
 
     def _setup_tools_menu(self):
         menu = self.menuBar().addMenu("&Tools")
