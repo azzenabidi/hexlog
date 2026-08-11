@@ -78,6 +78,7 @@ SELECTION_COLOR = "#6c7cff"
 TOKEN_DIAMETER = 46
 TOKEN_MIN_DIAMETER = 12
 TOKEN_MAX_DIAMETER = 256
+COMBAT_PANEL_MAX_HEIGHT = 170
 ERROR_COLOR = "#e74c3c"
 
 # Typing pause (ms) before the journal re-scans and re-highlights mentions;

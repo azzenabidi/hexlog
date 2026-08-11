@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from hexlog import constants as C
 from hexlog.combat import parse_hp
+from hexlog.ui.combat_panel import CombatPanel
 from hexlog.ui.dialogs import confirm
 from hexlog.ui.theme import DARK_THEME, THEMES
 
@@ -139,6 +140,24 @@ class TokenItem(QGraphicsRectItem):
         self.setToolTip(
             f"{kind_label(kind)}: {name}\n(drag to move, drag corner to resize, right-click to remove)"
         )
+
+    # Dict-style access for the combat engine (hexlog.combat), which is
+    # written against plain dicts so it stays testable without a GUI. Token
+    # state lives on the item, so the engine mutates it in place and
+    # to_dict() persists it.
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def setdefault(self, key, default=None):
+        if not hasattr(self, key):
+            setattr(self, key, default)
+        return getattr(self, key)
 
     def set_diameter(self, diameter):
         """Resize the token around its center, keeping its position fixed."""
@@ -443,6 +462,13 @@ class MapsTab(QWidget):
         self.view.setScene(self.scene)
         right.addWidget(self.view, 1)
 
+        self.combat_panel = CombatPanel(
+            lambda: [i for i in self.scene.items() if isinstance(i, TokenItem)],
+            self._persist_combat,
+        )
+        self.combat_panel.setMaximumHeight(C.COMBAT_PANEL_MAX_HEIGHT)
+        right.addWidget(self.combat_panel)
+
         self.status = QLabel("Create a scene, load a map image, then place character or NPC tokens.")
         right.addWidget(self.status)
         root.addLayout(right, 4)
@@ -531,6 +557,7 @@ class MapsTab(QWidget):
             # The view's theme-aware background fills the empty canvas.
             self.scene.setSceneRect(0, 0, 800, 600)
             self.status.setText("No scene selected. Create or pick a scene, then load a map image.")
+            self.combat_panel.refresh_scene()
             return
         # Map images are stored by basename and resolved against MAPS_DIR.
         map_path = scene.get("map_path")
@@ -547,6 +574,7 @@ class MapsTab(QWidget):
         for token in scene.get("tokens", []):
             self._restore_token(token)
         self.status.setText(f"Scene '{scene.get('name')}' - drag tokens, right-click to remove.")
+        self.combat_panel.refresh_scene()
 
     def _restore_token(self, token):
         """Recreate a TokenItem from a saved scene dict."""
@@ -676,13 +704,20 @@ class MapsTab(QWidget):
         self.scene.addItem(item)
         self._sync_scene_tokens()
         self.on_change()
+        self.combat_panel.refresh_scene()
         self.status.setText(f"Placed {entity['name']}. Drag to reposition, right-click to remove.")
 
     def remove_token(self, item):
         self.scene.removeItem(item)
         self._sync_scene_tokens()
         self.on_change()
+        self.combat_panel.refresh_scene()
         self.status.setText(f"Removed {item.name}.")
+
+    def _persist_combat(self):
+        """Sync combat mutations on canvas tokens into the store and save."""
+        self._sync_scene_tokens()
+        self.on_change()
 
     def _sync_scene_tokens(self):
         """Write the current on-canvas token positions into the scene record.

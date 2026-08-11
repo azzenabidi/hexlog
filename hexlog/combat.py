@@ -27,7 +27,7 @@ def parse_hp(value):
     return int(digits) if digits else None
 
 
-def _sort_key(combatant):
+def initiative_sort_key(combatant):
     """Order combatants by initiative, then max HP, then name."""
     return (
         combatant.get("initiative", 0),
@@ -45,7 +45,7 @@ def roll_initiative(combatants, rng=None):
     rng = rng or random
     for combatant in combatants:
         combatant["initiative"] = rng.randint(1, 20)
-    return sorted(combatants, key=_sort_key, reverse=True)
+    return sorted(combatants, key=initiative_sort_key, reverse=True)
 
 
 def apply_damage(combatant, amount):
