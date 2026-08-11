@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QTextEdit,
@@ -150,7 +151,10 @@ class UpdateDialog(QDialog):
             return
         current = __version__
         if not is_newer(release.tag, current):
-            self.status_label.setText(f"You're up to date (Hexlog {current}).")
+            QMessageBox.information(
+                self, C.APP_NAME, f"Hexlog {current} is the latest version - you're up to date."
+            )
+            self.accept()
             return
         self.status_label.setText(f"Hexlog {current} is installed.")
         self.release_heading.setText(f"Hexlog {release.tag} is available")
