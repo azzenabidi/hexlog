@@ -25,6 +25,32 @@ development, prod for the AppImage). There are no save buttons
   pure layers (`storage`, `theme`) and monkeypatch `constants` paths.
 - Always run lint and the full test suite before considering a change complete.
 
+## Releases
+
+To cut a release:
+
+1. Bump `__version__` in `hexlog/__init__.py` and commit it as
+   `Bump version to X.Y.Z` (e.g. `0.7.0`).
+2. Tag it `vX.Y.Z` (annotated) and push the tag. CI
+   (`.github/workflows/release.yml`) builds the AppImage and creates the
+   GitHub release from the tag.
+3. Write the release notes on the GitHub release page (or in the tag
+   message) using the markdown subset `hexlog/markdown.py` renders — ATX
+   headings, bullet and numbered lists, `` `code` ``, **bold**, *italic*,
+   and `[links](https://…)`. No raw HTML.
+
+Notes style:
+
+- Lead with a one-line summary of the release's theme.
+- Group changes under headings like `## What's new` and `## Fixes`; use
+  bullet lists, one item per user-facing change.
+- Write for players, not developers: describe the outcome, not the
+  implementation ("You can now drag tokens to reorder initiative", not
+  "Refactored the combat panel").
+- Keep it concise; the in-app updater (`Help > Check for Updates`) shows
+  these notes verbatim in the release card and after an update, so they
+  must read well on their own.
+
 ## Architecture
 
 - `hexlog/constants.py` — app-wide constants; storage paths and JSON keys live
