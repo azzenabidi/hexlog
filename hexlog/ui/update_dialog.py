@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QTextBrowser,
@@ -150,10 +149,10 @@ class UpdateDialog(QDialog):
             return
         current = __version__
         if not is_newer(release.tag, current):
-            QMessageBox.information(
-                self, C.APP_NAME, f"Hexlog {current} is the latest version - you're up to date."
-            )
-            self.accept()
+            # One window handles both outcomes: the check dialog itself says
+            # you're up to date instead of stacking a second message box.
+            self.progress.setVisible(False)
+            self.status_label.setText(f"You're up to date (Hexlog {current}).")
             return
         self.status_label.setText(f"Hexlog {current} is installed.")
         self.release_heading.setText(f"Hexlog {release.tag} is available")
