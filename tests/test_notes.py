@@ -4,6 +4,7 @@ from hexlog.ui.notes import (
     MentionHighlighter,
     dialogue_caret_offset,
     mention_pattern,
+    notes_mentioning,
     referenced_ids,
 )
 
@@ -24,6 +25,28 @@ def test_referenced_ignores_unnamed_entities():
 def test_mention_pattern_uses_word_boundaries():
     assert mention_pattern("Cat").search("A Cat sat") is not None
     assert mention_pattern("Cat").search("category") is None
+
+
+def test_notes_mentioning_orders_into_a_timeline():
+    notes = [
+        {"id": "n2", "title": "Fight", "timestamp": "2026-08-02 20:00", "text": "The Cat ambushed us."},
+        {"id": "n1", "title": "Meet", "timestamp": "2026-08-01 09:00", "text": "We met Cat in the ruins."},
+        {"id": "n3", "title": "Other", "timestamp": "2026-08-03 12:00", "text": "Nothing about it here."},
+    ]
+    entity = {"id": "e1", "name": "Cat"}
+    ids = [n["id"] for n in notes_mentioning(notes, entity)]
+    assert ids == ["n1", "n2"]
+
+
+def test_notes_mentioning_matches_whole_words_only():
+    notes = [{"id": "n1", "title": "T", "timestamp": "", "text": "A category of cats."}]
+    assert notes_mentioning(notes, {"id": "e1", "name": "Cat"}) == []
+
+
+def test_notes_mentioning_ignores_unnamed_entities():
+    note = {"id": "n1", "title": "T", "timestamp": "", "text": "Anything"}
+    assert notes_mentioning([note], {"id": "e1", "name": ""}) == []
+    assert notes_mentioning([note], None) == []
 
 
 def test_dialogue_caret_sits_between_the_quotes():

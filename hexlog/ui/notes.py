@@ -49,6 +49,22 @@ def referenced_ids(entities, text):
     return [e["id"] for e in entities if e.get("name") and mention_pattern(e["name"]).search(text)]
 
 
+def notes_mentioning(notes, entity):
+    """Notes whose text mentions the entity by name, oldest first (a timeline).
+
+    Reuses the same whole-word rule as the highlighter, so every note the
+    "What do I know?" dialog finds names the entity somewhere. Sorted by
+    timestamp so the result reads as a session-by-session timeline.
+    """
+    if not entity or not entity.get("name"):
+        return []
+    pattern = mention_pattern(entity["name"])
+    return sorted(
+        (note for note in notes if pattern.search(note.get("text", ""))),
+        key=lambda note: note.get("timestamp", ""),
+    )
+
+
 class MentionHighlighter:
     """Colors entity names appearing in the journal editor.
 
@@ -145,10 +161,13 @@ class NotesTab(QWidget):
         self.dialogue_btn.clicked.connect(self._insert_dialogue)
         self.mention_btn = QPushButton("@mention")
         self.mention_btn.clicked.connect(self._insert_mention)
+        self.known_btn = QPushButton("What do I know?")
+        self.known_btn.clicked.connect(self._open_known)
         toolbar.addWidget(self.mention_combo)
         toolbar.addWidget(self.dialogue_btn)
         toolbar.addWidget(self.mention_btn)
         toolbar.addStretch(1)
+        toolbar.addWidget(self.known_btn)
         right.addLayout(toolbar)
 
         title_row = QHBoxLayout()
@@ -424,6 +443,16 @@ class NotesTab(QWidget):
         self.editor.textCursor().insertText(f"@{name} ")
         self.editor.setFocus()
         self.highlighter.rehighlight()
+
+    def _open_known(self):
+        """Open the "What do I know?" timeline dialog for a chosen entity.
+
+        Imported lazily so the module stays acyclic: the dialog reuses this
+        module's mention matcher to find matching notes.
+        """
+        from hexlog.ui.known_dialog import KnownDialog
+
+        KnownDialog(self.store, self).exec()
 
     def _on_note_select(self, current, _previous):
         """Load the selected note's title and text into the editor."""
